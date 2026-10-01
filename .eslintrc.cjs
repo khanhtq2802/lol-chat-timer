@@ -25,6 +25,13 @@ module.exports = {
 			parserOptions: {
 				parser: '@typescript-eslint/parser'
 			}
+		},
+		{
+			// Electron main/preload are CommonJS
+			files: ['*.cjs'],
+			rules: {
+				'@typescript-eslint/no-var-requires': 'off'
+			}
 		}
 	]
 };

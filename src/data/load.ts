@@ -29,9 +29,16 @@ champions.forEach((c) => {
 	championsMap[c.name] = c;
 });
 
+export const championsByAlias: { [alias: string]: Champion } = {};
+champions.forEach((c) => {
+	championsByAlias[c.alias.toLowerCase()] = c;
+});
+
 export const spells = getSpells();
 
 export const spellsMap: { [name: string]: Spell } = {};
+export const spellsById: { [id: number]: Spell } = {};
 spells.forEach((s) => {
 	spellsMap[s.name] = s;
+	spellsById[s.id] = s;
 });

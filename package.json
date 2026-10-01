@@ -1,5 +1,5 @@
 {
-	"name": "lol-auto-accept",
+	"name": "lol-chat-timer",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -11,15 +11,15 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --plugin-search-dir . --check . && eslint .",
 		"format": "prettier --plugin-search-dir . --write .",
-		"create-opk": "ow opk pack build",
-		"sign-opk": "ow opk sign *.opk",
-		"build:overwolf": "npm run build && npm run create-opk",
-		"release": "npm run sign-opk"
+		"start": "npm run build && node electron/launch.cjs",
+		"electron": "node electron/launch.cjs",
+		"electron:dev": "node -e \"process.env.OVERLAY_DEV_URL='http://localhost:5173';require('./electron/launch.cjs')\"",
+		"update-data": "node electron/update-game-constants.cjs",
+		"dist": "npm run build && electron-builder --win",
+		"dist:selftest": "vite build --mode selftest && electron-builder --win -c.productName=\"LOL Chat Timer Selftest\" -c.appId=com.lolchattimer.selftest -c.directories.output=dist-selftest"
 	},
 	"devDependencies": {
 		"@nanostores/persistent": "^0.9.1",
-		"@overwolf/ow-cli": "^0.0.5-1",
-		"@overwolf/types": "^3.23.9",
 		"@sveltejs/adapter-static": "^2.0.3",
 		"@sveltejs/kit": "^1.25.2",
 		"@tailwindcss/typography": "^0.5.10",
@@ -29,24 +29,48 @@
 		"autoprefixer": "^10.4.16",
 		"daisyui": "^3.9.2",
 		"daisyui-ntsd": "1.0.8",
+		"electron": "^39.8.10",
+		"electron-builder": "^25.1.8",
 		"eslint": "^8.28.0",
 		"eslint-config-prettier": "^8.5.0",
 		"eslint-plugin-svelte": "^2.30.0",
-		"glob": "^10.3.10",
-		"mdsvex": "^0.11.0",
 		"nanostores": "^0.9.4",
-		"overwolf-nanostores": "^1.0.2",
 		"postcss": "^8.4.31",
 		"prettier": "^2.8.0",
 		"prettier-plugin-svelte": "^2.10.1",
 		"sass": "^1.69.5",
 		"svelte": "^4.2.1",
 		"svelte-check": "^3.4.3",
-		"svelte-markdown": "^0.4.0",
-		"svelte-preprocess-markdown": "^2.7.3",
 		"tailwindcss": "^3.3.3",
 		"tslib": "^2.4.1",
 		"typescript": "^5.0.0",
 		"vite": "^4.4.2"
+	},
+	"main": "electron/main.cjs",
+	"description": "League of Legends overlay to track enemy summoner spell and ultimate cooldowns",
+	"author": "khanhtq1",
+	"build": {
+		"appId": "com.lolchattimer.app",
+		"productName": "LOL Chat Timer",
+		"directories": {
+			"output": "dist",
+			"buildResources": "build-resources"
+		},
+		"files": [
+			"package.json",
+			"electron/**/*.cjs",
+			"!electron/launch.cjs",
+			"!electron/update-game-constants.cjs",
+			"build/**/*",
+			"static/desktop-icon.ico"
+		],
+		"win": {
+			"icon": "static/desktop-icon.ico",
+			"signAndEditExecutable": false,
+			"target": [
+				"dir"
+			]
+		},
+		"asar": false
 	}
 }
