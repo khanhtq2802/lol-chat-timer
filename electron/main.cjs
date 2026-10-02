@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, Tray, ipcMain, net, protocol, screen } = require('electron');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const https = require('node:https');
 const path = require('node:path');
@@ -232,7 +233,28 @@ function toggleOverlay() {
 // Start with Windows, only for the packaged app (a dev run would register the bare electron.exe)
 const startupMarker = () => path.join(app.getPath('userData'), 'startup-initialized');
 // the exe is the stock electron.exe, so name the startup entry explicitly (else "electron.app.Electron")
-const LOGIN_ITEM = { path: process.execPath, name: 'LOL Chat Timer' };
+// the self-test build has its own entry, else it would take over the one of the normal app
+const LOGIN_ITEM = {
+	path: process.execPath,
+	name: SELF_TEST ? 'LOL Chat Timer Selftest' : 'LOL Chat Timer'
+};
+
+// Reads the startup entry from the registry: app.getLoginItemSettings() never finds it, it looks up
+// the default entry name and fails to match an exe path with spaces ("LOL Chat Timer.exe").
+const RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+function opensAtLogin() {
+	try {
+		const entry = execFileSync('reg', ['query', RUN_KEY, '/v', LOGIN_ITEM.name], {
+			encoding: 'utf8',
+			windowsHide: true,
+			stdio: ['ignore', 'pipe', 'ignore']
+		});
+		return entry.toLowerCase().includes(process.execPath.toLowerCase());
+	} catch {
+		// no entry
+		return false;
+	}
+}
 
 function setOpenAtLogin(openAtLogin) {
 	app.setLoginItemSettings({ ...LOGIN_ITEM, openAtLogin });
@@ -241,7 +263,8 @@ function setOpenAtLogin(openAtLogin) {
 
 // turned on the first time the app runs, the tray menu turns it off
 function initOpenAtLogin() {
-	if (!app.isPackaged || fs.existsSync(startupMarker())) return;
+	// the self-test build only starts by hand
+	if (!app.isPackaged || SELF_TEST || fs.existsSync(startupMarker())) return;
 	setOpenAtLogin(true);
 	fs.writeFileSync(startupMarker(), '');
 }
@@ -261,8 +284,8 @@ function updateTrayMenu() {
 			{
 				label: 'Start with Windows',
 				type: 'checkbox',
-				enabled: app.isPackaged,
-				checked: app.getLoginItemSettings(LOGIN_ITEM).openAtLogin,
+				enabled: app.isPackaged && !SELF_TEST,
+				checked: !SELF_TEST && opensAtLogin(),
 				click: (item) => setOpenAtLogin(item.checked)
 			},
 			{ label: 'Quit', click: () => app.quit() }
