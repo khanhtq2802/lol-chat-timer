@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld('overlay', {
 	hide() {
 		ipcRenderer.send('overlay:hide');
 	},
+	setSize(width, height) {
+		ipcRenderer.send('overlay:set-size', width, height);
+	},
 	setFocusable(focusable) {
 		ipcRenderer.send('overlay:set-focusable', focusable);
 	}

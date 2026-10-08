@@ -1,4 +1,5 @@
 import { atom } from 'nanostores';
+import { persistentAtom } from '@nanostores/persistent';
 import { championsByAlias, spellsById } from '../data/load';
 import rawGameConstants from '../data/gameConstants.json';
 import type {
@@ -51,6 +52,12 @@ if (window.overlay) {
 }
 
 const SELF_TEST = import.meta.env.MODE === 'selftest';
+// Self test: your own champion as one more row, to compare the timers with your real cooldowns.
+// On in the self-test build (`npm run dist:selftest`), a setting in the normal one.
+export const selfTestAtom = persistentAtom<boolean>('selfTestAtom', SELF_TEST, {
+	encode: JSON.stringify,
+	decode: JSON.parse
+});
 if (SELF_TEST) {
 	// with the stack, Electron logs these to overlay-errors.log
 	window.addEventListener('error', (e) => console.error(e.error?.stack ?? e.message));
@@ -355,7 +362,7 @@ function liveEnemy(player: LivePlayer, constants: GameConstants): EnemyChampion 
 	};
 }
 
-function liveEnemies(data: GameData, constants: GameConstants) {
+function liveEnemies(data: GameData, constants: GameConstants, selfTest: boolean) {
 	const me = data.allPlayers.find(
 		(p) =>
 			(p.riotId && p.riotId === data.activePlayer.riotId) ||
@@ -369,7 +376,7 @@ function liveEnemies(data: GameData, constants: GameConstants) {
 			.map((p) => ({ enemy: liveEnemy(p, constants), reported: p.position }))
 	);
 	// self-test build (`npm run dist:selftest`): your own champion as a 6th row, to try the timers
-	if (SELF_TEST && me) {
+	if (selfTest && me) {
 		const self = liveEnemy(me, constants);
 		enemies.push({ ...self, id: `self:${self.id}`, position: null });
 	}
@@ -399,9 +406,15 @@ function loadingEnemies(data: LoadingData, constants: GameConstants) {
 	);
 }
 
-export function getEnemies(data: MatchData, constants: GameConstants): EnemyChampion[] {
+export function getEnemies(
+	data: MatchData,
+	constants: GameConstants,
+	selfTest = false
+): EnemyChampion[] {
 	const enemies =
-		data.source === 'loading' ? loadingEnemies(data, constants) : liveEnemies(data, constants);
+		data.source === 'loading'
+			? loadingEnemies(data, constants)
+			: liveEnemies(data, constants, selfTest);
 	// the overlay rows and timers are keyed by id, which repeats with the same champion twice
 	// (e.g. One for All), and a repeated key breaks the overlay rendering
 	const seen = new Map<string, number>();

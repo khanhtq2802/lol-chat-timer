@@ -22,6 +22,8 @@ declare global {
 			// Windows virtual-key code (0 disables the macro), mods: 1 ctrl, 2 shift, 4 alt
 			setMacroKey(vk: number, mods: number): void;
 			hide(): void;
+			// size of the overlay content, the window is resized to it
+			setSize(width: number, height: number): void;
 			setFocusable(focusable: boolean): void;
 		};
 	}

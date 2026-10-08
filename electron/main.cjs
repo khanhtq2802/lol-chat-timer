@@ -23,10 +23,10 @@ const POLL_INTERVAL = 2000;
 const SELF_TEST = /selftest/i.test(path.basename(process.execPath));
 if (SELF_TEST) app.setPath('userData', `${app.getPath('userData')}-selftest`);
 
-// boots and runes (3 columns), then 6 spells in a row: 2 summoner spells, Q W E R
-const WINDOW_WIDTH = 332;
-// one more 32px row (plus gap) for your own champion
-const WINDOW_HEIGHT = SELF_TEST ? 266 : 230;
+// size until the overlay reports its own (see 'overlay:set-size')
+const WINDOW_WIDTH = 300;
+const WINDOW_HEIGHT = 230;
+const MAX_WINDOW_SIZE = 1000;
 
 // The game serves the API on localhost with a self-signed Riot certificate
 const liveClientAgent = new https.Agent({ rejectUnauthorized: false });
@@ -371,6 +371,15 @@ if (!app.requestSingleInstanceLock()) {
 		});
 		ipcMain.on('overlay:set-macro-key', (_event, vk, mods) => inputHelper?.setHotkey(vk, mods));
 		app.on('before-quit', () => inputHelper?.stop());
+
+		// the window is as large as the overlay content, so it never covers the game around it
+		ipcMain.on('overlay:set-size', (_event, width, height) => {
+			if (!win || win.isDestroyed()) return;
+			const clamp = (n) => Math.min(Math.max(Math.round(Number(n)) || 0, 20), MAX_WINDOW_SIZE);
+			const [w, h] = [clamp(width), clamp(height)];
+			const [currentWidth, currentHeight] = win.getContentSize();
+			if (w !== currentWidth || h !== currentHeight) win.setContentSize(w, h);
+		});
 
 		// the settings inputs need keyboard focus, the timers don't
 		ipcMain.on('overlay:set-focusable', (_event, focusable) => {

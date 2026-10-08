@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { persistentAtom } from '@nanostores/persistent';
 	import { computed } from 'nanostores';
 	import type { GameConstants, SpellTimer } from '../types';
@@ -7,6 +7,7 @@
 		applyHaste,
 		gameConstantsAtom,
 		getEnemies,
+		selfTestAtom,
 		matchDataAtom,
 		type EnemyChampion,
 		type OverlaySpell,
@@ -40,8 +41,9 @@
 	let isSetting = false;
 	let minimize = false;
 
-	const enemiesAtom = computed([matchDataAtom, gameConstantsAtom], (data, constants) =>
-		data ? getEnemies(data, constants) : []
+	const enemiesAtom = computed(
+		[matchDataAtom, gameConstantsAtom, selfTestAtom],
+		(data, constants, selfTest) => (data ? getEnemies(data, constants, selfTest) : [])
 	);
 
 	const unsubscribe = enemiesAtom.subscribe((value) => {
@@ -135,6 +137,21 @@ ${source}`;
 
 	$: isLoadingScreen = $matchDataAtom?.source === 'loading';
 	$: rows = enemies.map((enemy) => toRow(enemy, modifiers[enemy.id] ?? {}, $gameConstantsAtom));
+	// the boots and runes take 2 per column, every row gets the columns of the longest one so the
+	// spells line up
+	$: modifierColumns = Math.max(1, ...rows.map((row) => Math.ceil((1 + row.runes.length) / 2)));
+
+	// The window follows the size of the overlay: a larger window would catch the clicks meant for
+	// the game around it, e.g. below the header when the overlay is collapsed.
+	let root: HTMLElement;
+	onMount(() => {
+		const observer = new ResizeObserver(() => {
+			const { width, height } = root.getBoundingClientRect();
+			window.overlay?.setSize(Math.ceil(width), Math.ceil(height));
+		});
+		observer.observe(root);
+		return () => observer.disconnect();
+	});
 
 	const CLICK_HINT = '\nClick to toggle';
 
@@ -265,11 +282,15 @@ ${source}`;
 
 <svelte:window on:contextmenu|preventDefault on:keydown={onKeyDown} />
 
-<div class="in-game flex flex-col h-screen max-h-screen">
+<div
+	class="in-game flex flex-col"
+	style={`--modifier-columns: ${modifierColumns}`}
+	bind:this={root}
+>
 	<div class="header drag bg-base-100">
 		<span class="mt-1 ml-1" style="font-size: 0.5rem">
 			{isLoadingScreen ? 'Spell Timer - Loading' : 'Spell Timer'}
-			{import.meta.env.MODE === 'selftest' ? '(Selftest)' : ''}
+			{$selfTestAtom ? '(Selftest)' : ''}
 		</span>
 		<div class="window-controls-group no-drag">
 			<button class="icon window-control" title="Settings" on:click={toggleSetting}>
@@ -304,7 +325,7 @@ ${source}`;
 			</button>
 		</div>
 	</div>
-	<div class={`flex flex-col gap-1 p-1 overflow-y-hidden ${minimize ? 'hidden' : ''}`}>
+	<div class="flex flex-col gap-1 p-1" class:collapsed={minimize}>
 		{#if isSetting}
 			<div class="form-control w-full bg-base-100 p-1 rounded">
 				<!-- svelte-ignore a11y-label-has-associated-control -->
@@ -358,6 +379,18 @@ ${source}`;
 					/>
 					<span class="label-text" style="font-size: 0.6rem">Toggle Boots &amp; Runes By Click</span
 					>
+				</label>
+				<label
+					class="label cursor-pointer justify-start gap-2 py-1"
+					title="Shows your own champion as one more row, to compare the timers with your real cooldowns."
+				>
+					<input
+						type="checkbox"
+						class="checkbox checkbox-xs"
+						checked={$selfTestAtom}
+						on:change={(e) => selfTestAtom.set(e.currentTarget.checked)}
+					/>
+					<span class="label-text" style="font-size: 0.6rem">Self Test: Show My Champion</span>
 				</label>
 			</div>
 		{:else if enemies.length === 0}
@@ -427,6 +460,19 @@ ${source}`;
 		-webkit-app-region: no-drag;
 	}
 
+	.in-game {
+		// room for the title and the window buttons, and for the settings
+		min-width: 190px;
+		width: max-content;
+	}
+	// keeps the width of the overlay, so the header buttons stay where they are
+	.collapsed {
+		height: 0;
+		padding-top: 0;
+		padding-bottom: 0;
+		overflow: hidden;
+	}
+
 	.icon-cell {
 		width: 32px;
 		height: 32px;
@@ -474,7 +520,7 @@ ${source}`;
 		grid-auto-flow: column;
 		grid-auto-columns: 15px;
 		gap: 2px;
-		width: 49px;
+		width: calc(var(--modifier-columns) * 17px - 2px);
 		flex: none;
 	}
 
