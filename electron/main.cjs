@@ -23,7 +23,8 @@ const POLL_INTERVAL = 2000;
 const SELF_TEST = /selftest/i.test(path.basename(process.execPath));
 if (SELF_TEST) app.setPath('userData', `${app.getPath('userData')}-selftest`);
 
-const WINDOW_WIDTH = 190;
+// boots and runes (3 columns), then 6 spells in a row: 2 summoner spells, Q W E R
+const WINDOW_WIDTH = 332;
 // one more 32px row (plus gap) for your own champion
 const WINDOW_HEIGHT = SELF_TEST ? 266 : 230;
 
@@ -64,6 +65,33 @@ function logDebug(message) {
 	}
 }
 
+const EPIC_MONSTER_EVENTS = ['DragonKill', 'HeraldKill', 'BaronKill', 'HordeKill', 'AtakhanKill'];
+
+/**
+ * Takedowns of each player from the game events, by the name the events use (the Riot ID without
+ * its tag): the different champions taken down (Ultimate Hunter stacks) and the epic monsters
+ * (Legend stacks). The game does not report the stacks of the other players.
+ * @returns {Map<string, { champions: Set<string>, epicMonsters: number }>}
+ */
+function countTakedowns(events) {
+	const takedowns = new Map();
+	const of = (name) => {
+		if (!takedowns.has(name)) takedowns.set(name, { champions: new Set(), epicMonsters: 0 });
+		return takedowns.get(name);
+	};
+	for (const event of Array.isArray(events) ? events : []) {
+		const names = [event.KillerName, ...(Array.isArray(event.Assisters) ? event.Assisters : [])];
+		for (const name of names.filter((n) => typeof n === 'string' && n)) {
+			if (event.EventName === 'ChampionKill' && event.VictimName) {
+				of(name).champions.add(event.VictimName);
+			} else if (EPIC_MONSTER_EVENTS.includes(event.EventName)) {
+				of(name).epicMonsters++;
+			}
+		}
+	}
+	return takedowns;
+}
+
 function fetchGameData() {
 	return new Promise((resolve) => {
 		const req = https.get(LIVE_CLIENT_URL, { agent: liveClientAgent, timeout: 1500 }, (res) => {
@@ -83,6 +111,11 @@ function fetchGameData() {
 						resolve(null);
 						return;
 					}
+					const takedowns = countTakedowns(data.events?.Events);
+					const takedownsOf = (p) =>
+						takedowns.get(p.riotIdGameName) ??
+						takedowns.get(p.summonerName) ??
+						takedowns.get(p.riotId);
 					// only send what the overlay needs
 					resolve({
 						source: 'live',
@@ -103,12 +136,23 @@ function fetchGameData() {
 							// Practice Tool target dummies get { error: 'Unable to find player' } instead
 							summonerSpells: p.summonerSpells?.error ? undefined : p.summonerSpells,
 							items: Array.isArray(p.items) ? p.items.map((item) => ({ itemID: item.itemID })) : [],
-							// other players only expose their rune trees, not the individual runes
+							// other players only expose their keystone and rune trees, not the other runes
 							runes: p.runes &&
 								!p.runes.error && {
+									keystone: { id: p.runes.keystone?.id },
 									primaryRuneTree: { id: p.runes.primaryRuneTree?.id },
 									secondaryRuneTree: { id: p.runes.secondaryRuneTree?.id }
-								}
+								},
+							scores: p.scores &&
+								!p.scores.error && {
+									kills: p.scores.kills,
+									assists: p.scores.assists,
+									creepScore: p.scores.creepScore
+								},
+							takedowns: {
+								champions: takedownsOf(p)?.champions.size ?? 0,
+								epicMonsters: takedownsOf(p)?.epicMonsters ?? 0
+							}
 						}))
 					});
 				} catch {

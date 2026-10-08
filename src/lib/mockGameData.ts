@@ -17,7 +17,8 @@ const player = (
 	alias: string,
 	spells: [string, string, string, string],
 	runeTrees: [number, number],
-	itemIds: number[] = []
+	itemIds: number[] = [],
+	keystone?: number
 ): LivePlayer => ({
 	championName,
 	rawChampionName: `game_character_displayname_${alias}`,
@@ -31,9 +32,12 @@ const player = (
 	},
 	items: itemIds.map((itemID) => ({ itemID })),
 	runes: {
+		keystone: { id: keystone },
 		primaryRuneTree: { id: runeTrees[0] },
 		secondaryRuneTree: { id: runeTrees[1] }
-	}
+	},
+	scores: { kills: 2, assists: 3, creepScore: 80 },
+	takedowns: { champions: 3, epicMonsters: 1 }
 });
 
 // Sample Live Client Data API response used when running in a browser without Electron
@@ -74,7 +78,8 @@ export const mockGameData: GameData = {
 			'Ahri',
 			['SummonerFlash', 'Flash', 'SummonerDot', 'Ignite'],
 			[DOMINATION, INSPIRATION],
-			[3171]
+			[3171],
+			8112 // Electrocute
 		),
 		player(
 			'CHAOS',
@@ -90,7 +95,9 @@ export const mockGameData: GameData = {
 			'Thresh',
 			'Thresh',
 			['SummonerFlash', 'Flash', 'SummonerExhaust', 'Exhaust'],
-			[INSPIRATION, RESOLVE]
+			[INSPIRATION, RESOLVE],
+			[],
+			8351 // Glacial Augment
 		)
 	]
 };

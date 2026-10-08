@@ -53,11 +53,15 @@ export interface LivePlayer {
 		summonerSpellTwo: LiveSummonerSpell;
 	};
 	items?: { itemID: number }[];
-	// only the rune trees are known for other players
+	// only the keystone and the rune trees are known for other players
 	runes?: {
+		keystone?: { id?: number };
 		primaryRuneTree?: { id?: number };
 		secondaryRuneTree?: { id?: number };
 	};
+	scores?: { kills: number; assists: number; creepScore: number };
+	// counted from the game events (electron/main.cjs): different champions taken down, epic monsters
+	takedowns?: { champions: number; epicMonsters: number };
 }
 
 export interface GameData {
@@ -87,6 +91,22 @@ export interface LoadingData {
 
 export type MatchData = GameData | LoadingData;
 
+// Players of a champion with this keystone and rune trees
+export interface RunePage {
+	keystone: number;
+	primary: number;
+	secondary: number;
+	play: number;
+	// share of them (0 to 1) taking each haste rune, by rune id
+	rates: { [runeId: string]: number };
+}
+
+export interface ChampionSpell {
+	name: string;
+	icon: string;
+	cooldowns: number[];
+}
+
 // Latest patch data from Data Dragon, built by electron/gameConstants.cjs
 export interface GameConstants {
 	schema: number;
@@ -97,7 +117,15 @@ export interface GameConstants {
 			key: number;
 			name: string;
 			icon: string;
-			r: { name: string; icon: string; cooldowns: number[] };
+			// cooldown at each rank of the spell
+			q: ChampionSpell;
+			w: ChampionSpell;
+			e: ChampionSpell;
+			r: ChampionSpell;
+			// skill taken at each level, e.g. "WQEQQRQWQWRWWEE" (most played order on OP.GG)
+			skillOrder?: string;
+			// most played rune pages (OP.GG), to guess the runes the game does not report
+			runePages?: RunePage[];
 		};
 	};
 	// keyed by spell id, e.g. "SummonerFlash"
@@ -112,5 +140,13 @@ export interface GameConstants {
 	ultimateHasteItems: {
 		[itemId: string]: { name: string; haste: number };
 	};
+	// same for the basic abilities (Ability Haste and Basic Ability Haste)
+	basicHasteItems: {
+		[itemId: string]: { name: string; haste: number };
+	};
+	// names of the stats each item gives, keyed by item id
+	itemStats: { [itemId: string]: string[] };
+	// runes that change the cooldowns, keyed by rune id (treeId 0: stat shard, fits any page)
+	hasteRunes: { [runeId: string]: { name: string; icon: string; treeId: number } };
 	cosmicInsight: { name: string; treeId: number; haste: number };
 }

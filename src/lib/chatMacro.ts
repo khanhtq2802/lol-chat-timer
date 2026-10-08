@@ -25,8 +25,7 @@ const SHORT_NAMES: { [spellKey: string]: string } = {
 	SummonerBoost: 'Cleanse',
 	SummonerHaste: 'Ghost',
 	SummonerSmite: 'Smite',
-	SummonerMana: 'Clarity',
-	R: 'R'
+	SummonerMana: 'Clarity'
 };
 
 const POSITION_NAMES: { [position in Position]: string } = {
@@ -40,8 +39,13 @@ const POSITION_NAMES: { [position in Position]: string } = {
 export interface MacroEnemy {
 	champion: string;
 	position: Position | null;
-	// running timers, in the overlay order (summoner spells, then R)
-	spells: { key: string; title: string; endAt: number }[]; // endAt: unix milliseconds
+	// running timers, in the overlay order (summoner spells, then Q W E R)
+	spells: {
+		key: string; // summoner spell id, or Q W E R
+		title: string;
+		isSummonerSpell: boolean;
+		endAt: number; // unix milliseconds
+	}[];
 }
 
 // game clock, "05:00"
@@ -51,18 +55,21 @@ export function formatGameTime(seconds: number) {
 }
 
 /**
- * One chat line per enemy with a running timer, "top F 05:00 | R 05:00": the game clock time each
- * spell is back up. Uses the champion name when the lane is unknown.
+ * One chat line per enemy with a running timer, "top F 05:00 | Q 4s | R 45s": the game clock time
+ * the summoner spells are back up, and the seconds left for the abilities (too short for a clock
+ * time). Uses the champion name when the lane is unknown.
  */
 export function buildChatLines(enemies: MacroEnemy[], gameTime: number, now = Date.now()) {
 	return enemies
 		.filter((e) => e.spells.length > 0)
 		.map((e) => {
 			const name = e.position ? POSITION_NAMES[e.position] : e.champion;
-			const spells = e.spells.map(
-				(s) =>
-					`${SHORT_NAMES[s.key] ?? s.title} ${formatGameTime(gameTime + (s.endAt - now) / 1000)}`
-			);
+			const spells = e.spells.map((s) => {
+				const secondsLeft = Math.max(0, (s.endAt - now) / 1000);
+				return s.isSummonerSpell
+					? `${SHORT_NAMES[s.key] ?? s.title} ${formatGameTime(gameTime + secondsLeft)}`
+					: `${s.key} ${Math.ceil(secondsLeft)}s`;
+			});
 			return `${name} ${spells.join(' | ')}`;
 		});
 }

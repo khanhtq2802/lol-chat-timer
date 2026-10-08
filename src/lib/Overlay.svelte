@@ -10,21 +10,32 @@
 		matchDataAtom,
 		type EnemyChampion,
 		type OverlaySpell,
+		type ItemHaste,
+		type SpellKind,
 		currentGameTime
 	} from './gameData';
+	import { AUTO_RATE, type RuneGuess } from './runes';
 	import { buildChatLines, macroKeyAtom, macroKeyFromEvent, packChatMessages } from './chatMacro';
 
 	const encoder = { encode: JSON.stringify, decode: JSON.parse };
 	// seconds already passed when the spell is clicked (reaction time)
 	const cooldownOffsetAtom = persistentAtom<number>('cooldownOffsetAtom', 2, encoder);
 	const clickStepAtom = persistentAtom<number>('clickStepAtom', 5, encoder);
+	// off: the boots and rune buttons only show what the app detected, a stray click next to the
+	// spells can't change the cooldowns
+	const manualModifiersAtom = persistentAtom<boolean>('manualModifiersAtom', false, encoder);
 
 	let enemies: readonly EnemyChampion[] = [];
 	let rosterKey = '';
 	// keyed by `${champion id}:${spell key}`
 	let timers: { [key: string]: SpellTimer } = {};
 	// summoner spell haste the player ticked for each enemy, keyed by champion id
-	let modifiers: { [enemyId: string]: { boots?: boolean; cosmicInsight?: boolean } } = {};
+	// and the runes switched by hand (by rune id), which overrule the guess from OP.GG
+	interface Ticked {
+		boots?: boolean;
+		runes?: { [runeId: string]: boolean };
+	}
+	let modifiers: { [enemyId: string]: Ticked } = {};
 	let now = Date.now();
 	let isSetting = false;
 	let minimize = false;
@@ -49,53 +60,75 @@
 		enemy: EnemyChampion;
 		boots: boolean;
 		bootsTitle: string;
-		cosmicInsight: boolean;
-		cosmicInsightTitle: string;
+		// guessed: on because most players take the rune, not switched by hand
+		runes: { rune: RuneGuess; on: boolean; guessed: boolean; title: string }[];
 		spells: { spell: OverlaySpell; cooldown: number; hasteTitle: string }[];
 	}
 
-	function toRow(
-		enemy: EnemyChampion,
-		ticked: { boots?: boolean; cosmicInsight?: boolean },
-		constants: GameConstants
-	): Row {
+	function runeTitle(rune: RuneGuess, enemy: EnemyChampion) {
+		const source =
+			rune.rate === null
+				? 'no data for these runes on OP.GG'
+				: `${Math.round(rune.rate * 100)}% of ${enemy.name} players with these runes (OP.GG)`;
+		return `${rune.name}: ${rune.detail}
+${source}`;
+	}
+
+	function toRow(enemy: EnemyChampion, ticked: Ticked, constants: GameConstants): Row {
 		// ticking boots by hand assumes the basic Ionian Boots of Lucidity
 		const manualBoots = constants.summonerHasteItems['3158'] ?? {
 			name: 'Ionian Boots of Lucidity',
 			haste: 10
 		};
-		const cosmic = constants.cosmicInsight;
 		const boots = enemy.boots ?? (ticked.boots ? manualBoots : null);
-		const cosmicInsight = enemy.canHaveCosmicInsight !== false && !!ticked.cosmicInsight;
-		const haste = (boots?.haste ?? 0) + (cosmicInsight ? cosmic.haste : 0);
+		const runes = enemy.runes.map((rune) => {
+			const byHand = ticked.runes?.[rune.id];
+			const on = byHand ?? (rune.rate ?? 0) >= AUTO_RATE;
+			return { rune, on, guessed: on && byHand === undefined, title: runeTitle(rune, enemy) };
+		});
+		const active = runes.filter(({ on }) => on).map(({ rune }) => rune);
+		const runeHaste = (kind: 'summonerHaste' | 'basicHaste' | 'ultimateHaste'): ItemHaste => ({
+			haste: active.reduce((sum, rune) => sum + rune[kind], 0),
+			items: active.filter((rune) => rune[kind] > 0).map((rune) => rune.name)
+		});
+		const add = (...hastes: ItemHaste[]): ItemHaste => ({
+			haste: hastes.reduce((sum, h) => sum + h.haste, 0),
+			items: hastes.flatMap((h) => h.items)
+		});
+		const extraSkillPoint = active.some((rune) => rune.skillPoints > 0);
 		// from the items in game; boots ticked by hand also give their ability haste
-		const ultimateHaste =
-			enemy.ultimateHaste?.haste ??
-			(ticked.boots ? constants.ultimateHasteItems?.['3158']?.haste ?? 0 : 0);
-		const ultimateHasteFrom =
-			enemy.ultimateHaste?.items ?? (ticked.boots ? [manualBoots.name] : []);
+		const manualAbilityHaste: ItemHaste = ticked.boots
+			? { haste: constants.ultimateHasteItems?.['3158']?.haste ?? 0, items: [manualBoots.name] }
+			: { haste: 0, items: [] };
+		const hasteByKind: { [kind in SpellKind]: ItemHaste } = {
+			summoner: add(
+				{ haste: boots?.haste ?? 0, items: boots ? [boots.name] : [] },
+				runeHaste('summonerHaste')
+			),
+			basic: add(enemy.basicHaste ?? manualAbilityHaste, runeHaste('basicHaste')),
+			ultimate: add(enemy.ultimateHaste ?? manualAbilityHaste, runeHaste('ultimateHaste'))
+		};
+		const hasteTitle = ({ kind }: OverlaySpell) => {
+			const { haste, items } = hasteByKind[kind];
+			if (!haste) return '';
+			const name = kind === 'summoner' ? 'summoner spell haste' : 'ability haste';
+			return `, ${haste} ${name}: ${items.join(', ')}`;
+		};
 
 		return {
 			enemy,
 			boots: !!boots,
 			bootsTitle: enemy.boots
 				? `${enemy.boots.name}: +${enemy.boots.haste} summoner spell haste (from items)`
-				: `${manualBoots.name}: +${manualBoots.haste} summoner spell haste (click to toggle)`,
-			cosmicInsight,
-			cosmicInsightTitle:
-				enemy.canHaveCosmicInsight === false
-					? `${cosmic.name}: not possible, no Inspiration rune tree`
-					: `${cosmic.name}: +${cosmic.haste} summoner spell haste (click to toggle)`,
+				: `${manualBoots.name}: +${manualBoots.haste} summoner spell haste`,
+			runes,
 			spells: enemy.spells.map((spell) => ({
 				spell,
-				cooldown: applyHaste(spell.cooldown, spell.isSummonerSpell ? haste : ultimateHaste),
-				hasteTitle: spell.isSummonerSpell
-					? haste
-						? `, ${haste} summoner spell haste`
-						: ''
-					: ultimateHaste
-					? `, ${ultimateHaste} ability haste: ${ultimateHasteFrom.join(', ')}`
-					: ''
+				cooldown: applyHaste(
+					(extraSkillPoint ? spell.cooldownWithSkillPoint : undefined) ?? spell.cooldown,
+					hasteByKind[spell.kind].haste
+				),
+				hasteTitle: hasteTitle(spell)
 			}))
 		};
 	}
@@ -103,12 +136,20 @@
 	$: isLoadingScreen = $matchDataAtom?.source === 'loading';
 	$: rows = enemies.map((enemy) => toRow(enemy, modifiers[enemy.id] ?? {}, $gameConstantsAtom));
 
-	function toggleModifier(enemy: EnemyChampion, modifier: 'boots' | 'cosmicInsight') {
-		// auto-detected from the items, or impossible with these rune trees
-		if (modifier === 'boots' && enemy.boots) return;
-		if (modifier === 'cosmicInsight' && enemy.canHaveCosmicInsight === false) return;
+	const CLICK_HINT = '\nClick to toggle';
+
+	function toggleBoots(enemy: EnemyChampion) {
+		if (!manualModifiersAtom.get()) return;
+		// auto-detected from the items
+		if (enemy.boots) return;
 		const current = modifiers[enemy.id] ?? {};
-		modifiers[enemy.id] = { ...current, [modifier]: !current[modifier] };
+		modifiers[enemy.id] = { ...current, boots: !current.boots };
+	}
+
+	function toggleRune(enemy: EnemyChampion, runeId: string, on: boolean) {
+		if (!manualModifiersAtom.get()) return;
+		const current = modifiers[enemy.id] ?? {};
+		modifiers[enemy.id] = { ...current, runes: { ...current.runes, [runeId]: !on } };
 	}
 
 	const interval = setInterval(() => {
@@ -134,6 +175,7 @@
 					.map(({ spell }) => ({
 						key: spell.key,
 						title: spell.title,
+						isSummonerSpell: spell.kind === 'summoner',
 						endAt: timers[`${enemy.id}:${spell.key}`].endAt
 					}))
 			})),
@@ -207,6 +249,11 @@
 		isSetting = !isSetting;
 		capturingMacroKey = false;
 		window.overlay?.setFocusable(isSetting);
+	}
+
+	// "7.5" for the short cooldowns of the basic abilities, "140" otherwise
+	function formatCooldown(seconds: number) {
+		return seconds < 20 ? `${Math.round(seconds * 10) / 10}` : `${Math.round(seconds)}`;
 	}
 
 	function formatCountdown(ms: number) {
@@ -299,34 +346,49 @@
 				>
 					{capturingMacroKey ? 'Press a key...' : $macroKeyAtom.label}
 				</button>
+				<label
+					class="label cursor-pointer justify-start gap-2 py-1"
+					title="Off: the boots and runes are detected by the app only. On: click them to switch them by hand."
+				>
+					<input
+						type="checkbox"
+						class="checkbox checkbox-xs"
+						checked={$manualModifiersAtom}
+						on:change={(e) => manualModifiersAtom.set(e.currentTarget.checked)}
+					/>
+					<span class="label-text" style="font-size: 0.6rem">Toggle Boots &amp; Runes By Click</span
+					>
+				</label>
 			</div>
 		{:else if enemies.length === 0}
 			<div class="bg-base-100 rounded p-1 text-center" style="font-size: 0.6rem">
 				Waiting for a match...
 			</div>
 		{:else}
-			{#each rows as { enemy, boots, bootsTitle, cosmicInsight, cosmicInsightTitle, spells } (enemy.id)}
+			{#each rows as { enemy, boots, bootsTitle, runes, spells } (enemy.id)}
 				<div class="flex gap-1">
 					<img class="icon-cell rounded" alt={enemy.name} title={enemy.name} src={enemy.icon} />
-					<div class="flex flex-col justify-between flex-none">
+					<div class="modifiers" class:locked={!$manualModifiersAtom}>
 						<button
 							class="modifier"
 							class:on={boots}
 							class:auto={!!enemy.boots}
-							title={bootsTitle}
-							on:click={() => toggleModifier(enemy, 'boots')}
+							title={bootsTitle + ($manualModifiersAtom && !enemy.boots ? CLICK_HINT : '')}
+							on:click={() => toggleBoots(enemy)}
 						>
 							<img src="/icons/ionian-boots.png" alt="Ionian Boots of Lucidity" />
 						</button>
-						<button
-							class="modifier"
-							class:on={cosmicInsight}
-							class:unavailable={enemy.canHaveCosmicInsight === false}
-							title={cosmicInsightTitle}
-							on:click={() => toggleModifier(enemy, 'cosmicInsight')}
-						>
-							<img src="/icons/cosmic-insight.png" alt={$gameConstantsAtom.cosmicInsight.name} />
-						</button>
+						{#each runes as { rune, on, guessed, title } (rune.id)}
+							<button
+								class="modifier"
+								class:on
+								class:guessed
+								title={title + ($manualModifiersAtom ? CLICK_HINT : '')}
+								on:click={() => toggleRune(enemy, rune.id, on)}
+							>
+								<img src={rune.icon} alt={rune.name} />
+							</button>
+						{/each}
 					</div>
 					{#each spells as { spell, cooldown, hasteTitle } (spell.key)}
 						{@const timer = timers[`${enemy.id}:${spell.key}`]}
@@ -334,13 +396,16 @@
 						<div
 							class="skill icon-cell"
 							class:active={!!timer}
-							title={`${spell.title} (${Math.round(cooldown)}s${hasteTitle})`}
+							title={`${spell.title} (${formatCooldown(cooldown)}s${hasteTitle})`}
 							style={timer
 								? `--time-left:${Math.round(((timer.endAt - now) / timer.cooldown) * 10000) / 100}%`
 								: ''}
 							on:mousedown={(e) => onSpellMouseDown(e, enemy, spell, cooldown)}
 						>
 							<img class="absolute w-full h-full" alt={spell.title} src={spell.icon} />
+							{#if spell.kind !== 'summoner'}
+								<div class="skill-key">{spell.key}</div>
+							{/if}
 							{#if timer}
 								<div class="absolute flex w-full h-full z-20">
 									<div class="countdown-text m-auto">{formatCountdown(timer.endAt - now)}</div>
@@ -387,6 +452,32 @@
 		z-index: 1;
 	}
 
+	// Q, W, E or R in the corner of the ability icons
+	.skill-key {
+		position: absolute;
+		left: 0;
+		bottom: 0;
+		z-index: 10;
+		padding: 0 2px;
+		font-size: 0.5rem;
+		font-weight: 700;
+		line-height: 1.2;
+		color: #f0e6d2;
+		background: rgba(0, 0, 0, 0.7);
+		border-top-right-radius: 3px;
+	}
+
+	// boots and up to 5 runes, filled top to bottom
+	.modifiers {
+		display: grid;
+		grid-template-rows: repeat(2, 15px);
+		grid-auto-flow: column;
+		grid-auto-columns: 15px;
+		gap: 2px;
+		width: 49px;
+		flex: none;
+	}
+
 	.modifier {
 		width: 15px;
 		height: 15px;
@@ -407,13 +498,16 @@
 		filter: none;
 		border-color: #4ade80;
 	}
-	.modifier.auto {
-		border-color: #c8aa6e;
+	.modifier.auto,
+	.modifiers.locked .modifier {
 		cursor: default;
 	}
-	.modifier.unavailable {
-		opacity: 0.12;
-		cursor: not-allowed;
+	.modifier.auto {
+		border-color: #c8aa6e;
+	}
+	// on because most players take the rune
+	.modifier.guessed {
+		border-color: #c8aa6e;
 	}
 
 	.countdown-text {

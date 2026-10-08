@@ -1,6 +1,6 @@
 import { atom } from 'nanostores';
 import { championsByAlias, spellsById } from '../data/load';
-import builtInGameConstants from '../data/gameConstants.json';
+import rawGameConstants from '../data/gameConstants.json';
 import type {
 	GameConstants,
 	GameData,
@@ -12,6 +12,16 @@ import type {
 } from '../types';
 import { POSITIONS } from '../types';
 import { mockGameData, mockLoadingData } from './mockGameData';
+import {
+	guessRunes,
+	LOADING_CONTEXT,
+	type PlayerRunes,
+	type RuneContext,
+	type RuneGuess
+} from './runes';
+
+// the JSON types are narrower than the data (e.g. no rune page lists every rune)
+const builtInGameConstants = rawGameConstants as unknown as GameConstants;
 
 export const matchDataAtom = atom<MatchData | null>(null);
 // snapshot shipped with the app, replaced by the latest patch data once Electron downloads it
@@ -68,8 +78,16 @@ export interface OverlaySpell {
 	title: string;
 	icon: string;
 	cooldown: number; // seconds, before haste
-	// summoner spells are reduced by summoner spell haste, ultimates are not
-	isSummonerSpell: boolean;
+	// each kind has its own haste: summoner spell haste, basic ability haste, ultimate haste
+	kind: SpellKind;
+	// basic abilities: cooldown with one more skill point (Triple Tonic)
+	cooldownWithSkillPoint?: number;
+}
+
+export type SpellKind = 'summoner' | 'basic' | 'ultimate';
+export interface ItemHaste {
+	haste: number;
+	items: string[];
 }
 
 export interface EnemyChampion {
@@ -79,10 +97,11 @@ export interface EnemyChampion {
 	spells: OverlaySpell[];
 	// Ionian Boots of Lucidity (or its upgrade) seen in the enemy items, null on the loading screen
 	boots: { name: string; haste: number } | null;
-	// ultimate haste from the enemy items, null on the loading screen
-	ultimateHaste: { haste: number; items: string[] } | null;
-	// false when neither rune tree is Inspiration, null when the rune trees are unknown
-	canHaveCosmicInsight: boolean | null;
+	// ability haste from the enemy items, null on the loading screen
+	basicHaste: ItemHaste | null;
+	ultimateHaste: ItemHaste | null;
+	// haste runes the enemy may have, guessed from the rune pages played on OP.GG
+	runes: RuneGuess[];
 	// reported by the game when the queue has roles, guessed otherwise (see assignPositions)
 	position: Position | null;
 }
@@ -113,7 +132,7 @@ function toSummonerSpell(
 		title: data.name,
 		icon: local?.iconPath ?? data.icon,
 		cooldown: data.cooldown,
-		isSummonerSpell: true
+		kind: 'summoner'
 	};
 }
 
@@ -131,8 +150,60 @@ function toUltimate(
 		title: champion.r.name,
 		icon: championsByAlias[alias]?.spellR?.icon ?? champion.r.icon,
 		cooldown: cooldowns[ultimateRank(level, cooldowns.length) - 1],
-		isSummonerSpell: false
+		kind: 'ultimate'
 	};
+}
+
+// used for the champions OP.GG has no skill order for
+const DEFAULT_SKILL_ORDER = 'QWEQQRQWQWRWWEE';
+
+// The order covers levels 1-15: level 16 goes to R and the last two levels to the ability left
+function fullSkillOrder(order: string) {
+	const count = (key: string) => [...order].filter((skill) => skill === key).length;
+	const last = ['Q', 'W', 'E'].sort((a, b) => count(a) - count(b))[0];
+	return order.length >= 18 ? order : (order + 'R' + last + last).slice(0, 18);
+}
+
+/**
+ * Rank the basic ability most likely has at this level, following the most played skill order.
+ * An ability not taken yet counts as rank 1.
+ * @param extraPoints skill points on top of the one of each level (Triple Tonic), spent on the
+ * next basic abilities of the order
+ */
+function basicRank(key: string, level: number, order: string, ranks: number, extraPoints = 0) {
+	const skills = [...fullSkillOrder(order)];
+	const taken = skills.slice(0, level);
+	taken.push(
+		...skills
+			.slice(level)
+			.filter((skill) => skill !== 'R')
+			.slice(0, extraPoints)
+	);
+	const rank = taken.filter((skill) => skill === key).length;
+	return Math.min(Math.max(rank, 1), ranks);
+}
+
+function toBasicAbilities(alias: string, level: number, constants: GameConstants): OverlaySpell[] {
+	const champion = constants.champions[alias];
+	if (!champion) return [];
+
+	// the downloaded data has no skill orders when OP.GG could not be reached
+	const order =
+		champion.skillOrder ?? builtInGameConstants.champions[alias]?.skillOrder ?? DEFAULT_SKILL_ORDER;
+	return (['q', 'w', 'e'] as const)
+		.filter((slot) => champion[slot]?.cooldowns.length > 0)
+		.map((slot) => {
+			const key = slot.toUpperCase();
+			const { name, icon, cooldowns } = champion[slot];
+			return {
+				key,
+				title: name,
+				icon,
+				cooldown: cooldowns[basicRank(key, level, order, cooldowns.length) - 1],
+				cooldownWithSkillPoint: cooldowns[basicRank(key, level, order, cooldowns.length, 1) - 1],
+				kind: 'basic'
+			};
+		});
 }
 
 function toEnemy(
@@ -140,11 +211,17 @@ function toEnemy(
 	fallbackName: string,
 	level: number,
 	summonerSpellIds: (string | undefined)[],
-	constants: GameConstants
+	constants: GameConstants,
+	// keystone and rune trees, with what the match tells about the player: unknown on the loading screen
+	runes: PlayerRunes | null = null,
+	context: RuneContext = LOADING_CONTEXT
 ): EnemyChampion {
 	const champion = constants.champions[alias];
+	// the downloaded data has no rune pages when OP.GG could not be reached
+	const runePages = champion?.runePages ?? builtInGameConstants.champions[alias]?.runePages;
 	const spells = [
 		...summonerSpellIds.map((id) => toSummonerSpell(id, constants)),
+		...toBasicAbilities(alias, level, constants),
 		toUltimate(alias, level, constants)
 	]
 		.filter((s): s is OverlaySpell => !!s)
@@ -157,8 +234,9 @@ function toEnemy(
 		icon: championsByAlias[alias]?.squarePortraitPath ?? champion?.icon ?? UNKNOWN_CHAMPION_ICON,
 		spells,
 		boots: null,
+		basicHaste: null,
 		ultimateHaste: null,
-		canHaveCosmicInsight: null,
+		runes: champion ? guessRunes(runePages, runes, { ...context, level }, constants) : [],
 		position: null
 	};
 }
@@ -231,36 +309,49 @@ function liveEnemy(player: LivePlayer, constants: GameConstants): EnemyChampion 
 			) ?? alias;
 	}
 
+	const summonerSpellIds = [
+		liveSummonerSpellId(player.summonerSpells?.summonerSpellOne, constants),
+		liveSummonerSpellId(player.summonerSpells?.summonerSpellTwo, constants)
+	];
+	const { keystone, primaryRuneTree, secondaryRuneTree } = player.runes ?? {};
 	const enemy = toEnemy(
 		alias,
 		player.championName,
 		player.level,
-		[
-			liveSummonerSpellId(player.summonerSpells?.summonerSpellOne, constants),
-			liveSummonerSpellId(player.summonerSpells?.summonerSpellTwo, constants)
-		],
-		constants
+		summonerSpellIds,
+		constants,
+		// the rune trees are missing for the Practice Tool dummies
+		primaryRuneTree?.id && secondaryRuneTree?.id
+			? { keystone: keystone?.id, primary: primaryRuneTree.id, secondary: secondaryRuneTree.id }
+			: null,
+		{
+			level: player.level,
+			itemIds: (player.items ?? []).map((item) => item.itemID),
+			takedowns: player.takedowns ?? LOADING_CONTEXT.takedowns,
+			scores: player.scores ?? LOADING_CONTEXT.scores,
+			isJungler: summonerSpellIds.includes('SummonerSmite')
+		}
 	);
 
 	const boots = (player.items ?? [])
 		.map((item) => constants.summonerHasteItems[item.itemID])
 		.filter((item) => !!item)
 		.sort((a, b) => b.haste - a.haste)[0];
-	const hasteItems = (player.items ?? [])
-		.map((item) => constants.ultimateHasteItems?.[item.itemID])
-		.filter((item) => !!item);
-	const trees = [player.runes?.primaryRuneTree?.id, player.runes?.secondaryRuneTree?.id];
+	const itemHaste = (hasteItems: GameConstants['ultimateHasteItems'] | undefined): ItemHaste => {
+		const items = (player.items ?? [])
+			.map((item) => hasteItems?.[item.itemID])
+			.filter((item) => !!item);
+		return {
+			haste: items.reduce((sum, item) => sum + item.haste, 0),
+			items: items.map((item) => item.name)
+		};
+	};
 
 	return {
 		...enemy,
 		boots: boots ?? null,
-		ultimateHaste: {
-			haste: hasteItems.reduce((sum, item) => sum + item.haste, 0),
-			items: hasteItems.map((item) => item.name)
-		},
-		canHaveCosmicInsight: trees.some((id) => id)
-			? trees.includes(constants.cosmicInsight.treeId)
-			: null
+		basicHaste: itemHaste(constants.basicHasteItems),
+		ultimateHaste: itemHaste(constants.ultimateHasteItems)
 	};
 }
 
