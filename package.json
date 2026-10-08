@@ -1,6 +1,6 @@
 {
 	"name": "lol-chat-timer",
-	"version": "0.0.1",
+	"version": "26.20.0",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -16,6 +16,7 @@
 		"electron:dev": "node -e \"process.env.OVERLAY_DEV_URL='http://localhost:5173';require('./electron/launch.cjs')\"",
 		"update-data": "node electron/update-game-constants.cjs",
 		"dist": "npm run build && electron-builder --win",
+		"release": "npm run build && electron-builder --win zip",
 		"dist:selftest": "vite build --mode selftest && electron-builder --win -c.productName=\"LOL Chat Timer Selftest\" -c.appId=com.lolchattimer.selftest -c.directories.output=dist-selftest"
 	},
 	"devDependencies": {
@@ -67,6 +68,7 @@
 		"win": {
 			"icon": "static/desktop-icon.ico",
 			"signAndEditExecutable": false,
+			"artifactName": "LOL-Chat-Timer-${version}-portable.${ext}",
 			"target": [
 				"dir"
 			]
