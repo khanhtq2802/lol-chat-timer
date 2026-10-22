@@ -10,7 +10,7 @@
   --accent:#2f6fed;--go:#15803d;--go-bg:#dcfce7;--wait:#b45309;--wait-bg:#fef3c7;
   --bad:#dc2626;--bad-bg:#fee2e2;--stage:#eceff3;--bar:#2f6fed;
   --mouse-body:#dfe3e8;--mouse-part:#c4cbd5;--mouse-line:#8b95a3;
-  --hold:#dc2626;--hold-bg:#fee2e2;
+  --hold:#dc2626;--hold-bg:#fee2e2;--cue:#c026d3;
 }
 @media (prefers-color-scheme:dark){
   :root{
@@ -18,7 +18,7 @@
     --accent:#6d97ff;--go:#4ade80;--go-bg:#123d24;--wait:#fbbf24;--wait-bg:#3d2e0c;
     --bad:#f87171;--bad-bg:#431a1a;--stage:#1c2029;--bar:#6d97ff;
     --mouse-body:#2a303b;--mouse-part:#3a4250;--mouse-line:#6b7586;
-    --hold:#f87171;--hold-bg:#431a1a;
+    --hold:#f87171;--hold-bg:#431a1a;--cue:#e879f9;
   }
 }
 *{box-sizing:border-box}
@@ -80,6 +80,11 @@ body.testing:not(.arena) #stage{display:flex}
 #stage.go .fig .on,#stage.go .fig .arrow{fill:var(--go);stroke:var(--go)}
 #stage.bad .fig .on,#stage.bad .fig .arrow{fill:var(--wait);stroke:var(--wait)}
 #stage.go .fig .on{animation:pulse .5s ease-in-out infinite alternate}
+/* Test 2: cue colour differs from the blue/green target and the amber error flash */
+#arena .fig .on,#arena .fig .arrow{fill:var(--cue);stroke:var(--cue)}
+#arenaNeedName{color:var(--cue)}
+#targetBadge{border-color:var(--cue)!important;border-width:2px!important}
+#targetBadge .bname{color:var(--cue)}
 @keyframes pulse{from{opacity:1}to{opacity:.55}}
 .fig .cap{fill:#fff;opacity:.18;stroke:none}
 .fig .keytxt{font:700 30px system-ui,sans-serif;fill:#fff}
