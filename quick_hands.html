@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mouse Button Reaction Test</title>
+<style>
+:root{
+  --bg:#f5f6f8;--panel:#ffffff;--text:#15171c;--muted:#667085;--line:#e2e5ea;
+  --accent:#2f6fed;--go:#15803d;--go-bg:#dcfce7;--wait:#b45309;--wait-bg:#fef3c7;
+  --bad:#dc2626;--bad-bg:#fee2e2;--stage:#eceff3;--bar:#2f6fed;
+  --mouse-body:#dfe3e8;--mouse-part:#c4cbd5;--mouse-line:#8b95a3;
+  --hold:#dc2626;--hold-bg:#fee2e2;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0e1014;--panel:#171a21;--text:#e7e9ee;--muted:#98a2b3;--line:#2a2f3a;
+    --accent:#6d97ff;--go:#4ade80;--go-bg:#123d24;--wait:#fbbf24;--wait-bg:#3d2e0c;
+    --bad:#f87171;--bad-bg:#431a1a;--stage:#1c2029;--bar:#6d97ff;
+    --mouse-body:#2a303b;--mouse-part:#3a4250;--mouse-line:#6b7586;
+    --hold:#f87171;--hold-bg:#431a1a;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body.testing{user-select:none;overflow:hidden}
+.wrap{max-width:960px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 20px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.card h2{font-size:15px;margin:0 0 12px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+input[type=text],input[type=number]{width:100%;padding:6px 8px;border:1px solid var(--line);
+  border-radius:8px;background:var(--bg);color:var(--text);font:inherit}
+input[type=number]{width:80px}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
+button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--text);
+  padding:8px 14px;border-radius:8px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.small{padding:3px 8px;font-size:13px}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.muted{color:var(--muted);font-size:13px}
+.detect{margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--stage);font-size:14px}
+.detect b{color:var(--accent)}
+#stage{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;
+  justify-content:center;background:var(--stage);z-index:10;text-align:center;padding:16px}
+body.testing:not(.arena) #stage{display:flex}
+#stage.wait{background:var(--hold-bg)}
+#stage.go{background:var(--go-bg)}
+#stage.bad{background:var(--wait-bg)}
+#stageMain{font-size:clamp(36px,8vw,84px);font-weight:800;line-height:1.1}
+#stage.wait #stageMain{color:var(--hold)}
+#stage.go #stageMain{color:var(--go)}
+#stage.bad #stageMain{color:var(--wait)}
+#stageSub{margin-top:14px;font-size:18px;color:var(--muted)}
+#stageProg{position:absolute;top:16px;left:16px;color:var(--muted);font-variant-numeric:tabular-nums}
+#stopBtn{position:absolute;top:12px;right:16px}
+.bar{height:10px;border-radius:5px;background:var(--bar);min-width:2px}
+.barcell{width:30%}
+.best{color:var(--go);font-weight:700}
+.note{font-size:13px;color:var(--muted);margin-top:12px}
+.note li{margin:3px 0}
+.detect{display:flex;align-items:center;gap:12px}
+.detectfig{flex:0 0 auto;width:96px}
+.detectfig svg{width:100%;height:auto;display:block}
+#stageFig{margin-bottom:14px}
+#stageFig svg{height:clamp(140px,34vh,280px);width:auto;display:block}
+.fig .body{fill:var(--mouse-body);stroke:var(--mouse-line);stroke-width:2}
+.fig .part{fill:var(--mouse-part);stroke:var(--mouse-line);stroke-width:1.5;transition:fill .08s}
+.fig .on{fill:var(--accent);stroke:var(--accent);stroke-width:3}
+.fig .arrow{fill:var(--accent);stroke:none}
+#stage.wait .fig .on,#stage.wait .fig .arrow{fill:var(--hold);stroke:var(--hold)}
+#stage.go .fig .on,#stage.go .fig .arrow{fill:var(--go);stroke:var(--go)}
+#stage.bad .fig .on,#stage.bad .fig .arrow{fill:var(--wait);stroke:var(--wait)}
+#stage.go .fig .on{animation:pulse .5s ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:1}to{opacity:.55}}
+.fig .cap{fill:#fff;opacity:.18;stroke:none}
+.fig .keytxt{font:700 30px system-ui,sans-serif;fill:#fff}
+select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.stat{background:var(--stage);border-radius:10px;padding:8px 14px;min-width:110px}
+.stat b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted)}
+#pathCanvas{width:100%;display:block;border:1px solid var(--line);border-radius:10px;background:var(--stage)}
+/* Arena (test 2) */
+#arena{position:fixed;inset:0;display:none;background:var(--stage);z-index:10;cursor:crosshair;overflow:hidden}
+body.arena #arena{display:block}
+#arenaHud{position:absolute;top:0;left:0;right:0;height:120px;display:flex;align-items:center;
+  justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel);cursor:default}
+#arenaProg{color:var(--muted);font-variant-numeric:tabular-nums;min-width:120px}
+#arenaNeed{display:flex;align-items:center;gap:14px;font-weight:800;font-size:30px}
+#arenaNeedFig svg{height:108px;width:auto;display:block}
+.hudRight{display:flex;align-items:center;gap:14px;min-width:120px;justify-content:flex-end;font-variant-numeric:tabular-nums}
+#target{position:absolute;display:none;border-radius:50%;transform:translate(-50%,-50%);
+  background:var(--accent);opacity:.9;box-shadow:0 0 0 3px var(--panel) inset;pointer-events:none}
+#target::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:var(--panel)}
+#target.hover{background:var(--go)}
+#target.flash{background:var(--wait)}
+#targetBadge{position:absolute;display:none;pointer-events:none;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:4px 6px}
+#targetBadge svg{height:84px;width:auto;display:block;margin:0 auto}
+#targetBadge .bname{font-weight:700;font-size:13px;text-align:center;white-space:nowrap;padding:0 4px 2px}
+.missmark{position:absolute;transform:translate(-50%,-50%);color:var(--bad);font-weight:800;font-size:20px;
+  pointer-events:none;animation:fade .45s ease-out forwards}
+.missmark.wrong{color:var(--wait)}
+.hitmark{position:absolute;transform:translate(-50%,-50%);color:var(--go);font-weight:800;font-size:18px;
+  pointer-events:none;animation:rise .5s ease-out forwards}
+@keyframes fade{to{opacity:0}}
+@keyframes rise{to{opacity:0;transform:translate(-50%,-160%)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Mouse Button Reaction Test</h1>
+  <p class="sub">Two tests: <b>Test 1</b> measures the pure reaction time of each button and finger; <b>Test 2</b> measures moving the cursor to a target and then pressing the right button (like an aim trainer). Supports left/right click, wheel click, Back/Forward, scroll up/down, and keyboard keys (if you have remapped mouse buttons to keys in G HUB).</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>1. Choose inputs to test</h2>
+      <table>
+        <thead><tr><th></th><th>Input</th><th>Finger (note)</th><th></th></tr></thead>
+        <tbody id="inputRows"></tbody>
+      </table>
+      <div class="row">
+        <button id="addKeyBtn" class="small">+ Add keyboard key</button>
+        <span id="addKeyHint" class="muted"></span>
+      </div>
+      <div class="detect"><div class="detectfig" id="detectFig"></div><div id="detect">Press any button to check that the browser detects it.</div></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Test 1: Button reaction</h2>
+      <div class="row">
+        <label for="trials">Trials per input</label>
+        <input type="number" id="trials" min="3" max="50" value="10">
+      </div>
+      <div class="row">
+        <input type="checkbox" id="simple" checked>
+        <label for="simple">Show the input in advance (simple reaction)</label>
+      </div>
+      <p class="muted" style="margin:0 0 8px">On: you know which input to press and only wait for the signal, so it measures pure finger speed. Use this mode to compare fingers. Off: the input is revealed at random, so it also measures recognition and choice time (closer to a real fight).</p>
+      <div class="row">
+        <button id="startBtn" class="primary">Start test</button>
+        <button id="csvBtn" disabled>Download CSV</button>
+      </div>
+      <ul class="note">
+        <li>A <b>red</b> screen means wait; when it turns <b>green</b>, press the shown input as fast as you can.</li>
+        <li>Pressing while waiting, or faster than 100 ms, counts as a <b>false start</b> and that trial is repeated.</li>
+        <li>Press <b>Esc</b> to stop at any time.</li>
+        <li>Each result may be off by about one display frame, but the error is the same for every input, so comparisons stay valid.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="resultCard" hidden>
+    <h2>Test 1 results (sorted by median, fastest first)</h2>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Input</th><th>Finger</th><th class="num">Median</th><th class="num">Mean</th>
+          <th class="num">Best</th><th class="num">SD</th><th class="num">Correct</th>
+          <th class="num">Wrong</th><th class="num">Early</th><th class="num">Late</th><th class="barcell"></th>
+        </tr></thead>
+        <tbody id="resultRows"></tbody>
+      </table>
+    </div>
+    <p class="note">The median is the most reliable figure because a few mistimed presses barely affect it. Run the test several times, at different times of day, before drawing conclusions.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>3. Test 2: Move + press</h2>
+    <p class="muted" style="margin:0 0 8px">A round target appears at a random position, with a mouse picture highlighting the input to use. Move the cursor onto the target, then press <b>that exact input</b> (for scrolling: scroll while the cursor is inside the target). Uses the inputs chosen in section 1.</p>
+    <div class="row">
+      <label for="trials2">Targets per input</label>
+      <input type="number" id="trials2" min="1" max="50" value="8">
+      <label for="size2">Size</label>
+      <select id="size2">
+        <option value="L">Large</option>
+        <option value="M" selected>Medium</option>
+        <option value="S">Small</option>
+        <option value="XS">Tiny</option>
+      </select>
+      <label for="life2">Target shrinks and disappears after</label>
+      <select id="life2">
+        <option value="0" selected>No limit</option>
+        <option value="4000">4 seconds</option>
+        <option value="2500">2.5 seconds</option>
+        <option value="1500">1.5 seconds</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="startBtn2" class="primary">Start test 2</button>
+      <button id="csvBtn2" disabled>Download CSV</button>
+    </div>
+    <ul class="note">
+      <li>Pressing outside the target is a <b>miss</b>; pressing the wrong input inside it is a <b>wrong input</b>. Both cost 1 point and the target stays.</li>
+      <li>Results split <b>move time</b> (target appears → cursor reaches it) and <b>press time</b> (cursor enters target → press).</li>
+      <li>Use "No limit" for accurate measurement; enable shrinking to practise under time pressure.</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="resultCard2" hidden>
+    <h2>Test 2 results</h2>
+    <div class="stats" id="summary2"></div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Input</th><th>Finger</th><th class="num">Hits</th><th class="num">Total</th>
+          <th class="num">Move</th><th class="num">Press</th>
+          <th class="num">Wrong</th><th class="num">Miss</th><th class="num">Expired</th>
+        </tr></thead>
+        <tbody id="resultRows2"></tbody>
+      </table>
+    </div>
+    <p class="note">Time columns are medians (ms). The table is sorted by <b>Press</b>, i.e. finger speed once the cursor is on target.</p>
+    <h2 style="margin-top:16px">Mouse path</h2>
+    <canvas id="pathCanvas"></canvas>
+    <p class="note"><span style="color:var(--go)">●</span> hit &nbsp; <span style="color:var(--muted)">○</span> expired &nbsp; <span style="color:var(--bad)">✕</span> miss &nbsp; <span style="color:var(--wait)">✕</span> wrong input</p>
+  </div>
+</div>
+
+<div id="arena">
+  <div id="arenaHud">
+    <div id="arenaProg"></div>
+    <div id="arenaNeed"><div id="arenaNeedFig"></div><span id="arenaNeedName"></span></div>
+    <div class="hudRight"><span id="arenaScore"></span><button id="arenaStop">Stop (Esc)</button></div>
+  </div>
+  <div id="target"></div>
+  <div id="targetBadge"></div>
+</div>
+
+<div id="stage">
+  <div id="stageProg"></div>
+  <button id="stopBtn">Stop (Esc)</button>
+  <div id="stageFig"></div>
+  <div id="stageMain"></div>
+  <div id="stageSub"></div>
+</div>
+
+<script>
+(function(){
+  const DEFAULT_INPUTS = [
+    {id:'L',  name:'Left click',   finger:'Index',  on:true},
+    {id:'R',  name:'Right click',  finger:'Middle', on:true},
+    {id:'M',  name:'Wheel click',  finger:'',          on:false},
+    {id:'F',  name:'Forward',      finger:'Thumb',  on:true},
+    {id:'B',  name:'Back',         finger:'',          on:false},
+    {id:'WU', name:'Scroll up',    finger:'',          on:false},
+    {id:'WD', name:'Scroll down',  finger:'',          on:false},
+  ];
+  const BUTTON_IDS = ['L','M','R','B','F'];
+  const MIN_DELAY = 1000, MAX_DELAY = 3000, TIMEOUT = 2000, ANTICIPATION = 100, FEEDBACK_MS = 700;
+
+  let inputs = load() || DEFAULT_INPUTS.map(x=>({...x}));
+  let capturingKey = false;
+  let results = [];
+  const S = {phase:'idle', queue:[], idx:0, target:null, t0:0, t0paint:0,
+             waitTimer:null, goTimer:null, fbTimer:null, wheelIgnoreUntil:0};
+  // Test 2 state
+  const A = {active:false, queue:[], idx:0, tgt:null, mx:innerWidth/2, my:innerHeight/2,
+             raf:0, gapTimer:null, log:[], marks:[], streak:0, score:0, W:0, H:0,
+             size:'M', life:0, wheelIgnoreUntil:0, lastPathT:0};
+
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), stageMain = $('stageMain'), stageSub = $('stageSub'), stageProg = $('stageProg');
+
+  function load(){
+    try{ const v = JSON.parse(localStorage.getItem('mrt_inputs_en')); return Array.isArray(v)&&v.length ? v : null; }
+    catch(e){ return null; }
+  }
+  function save(){ try{ localStorage.setItem('mrt_inputs_en', JSON.stringify(inputs)); }catch(e){} }
+  function byId(id){ return inputs.find(x=>x.id===id); }
+  function nameOf(id){ const x = byId(id); return x ? x.name : keyName(id); }
+  function keyName(id){
+    if(id.startsWith('K:')){ let c = id.slice(2);
+      c = c.replace(/^Key/,'').replace(/^Digit/,'').replace(/^Numpad/,'Num ');
+      return 'Key ' + c; }
+    const d = DEFAULT_INPUTS.find(x=>x.id===id); return d ? d.name : id;
+  }
+  function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // Top-down mouse drawing; the part matching `id` is highlighted.
+  // id '' = plain mouse, 'K:...' = keyboard key cap.
+  function figSVG(id){
+    if(id && id.startsWith('K:')){
+      const label = esc(keyName(id).replace(/^Key /,''));
+      const fs = label.length > 4 ? 20 : 30;
+      return `<svg class="fig" viewBox="0 0 200 140" role="img" aria-label="Key ${label}">
+        <rect x="30" y="16" width="140" height="108" rx="18" class="part on"/>
+        <rect x="42" y="24" width="116" height="82" rx="12" class="cap"/>
+        <text x="100" y="${66 + fs/3}" text-anchor="middle" class="keytxt" style="font-size:${fs}px">${label}</text>
+      </svg>`;
+    }
+    const on = p => p === id ? ' on' : '';
+    const wheelOn = (id === 'M' || id === 'WU' || id === 'WD') ? ' on' : '';
+    // Big arrows in the margins: left = side buttons, right = wheel scroll, top = wheel press
+    const arrows = {
+      F:  '<path class="arrow" d="M8 150 L-36 112 L-36 134 L-86 134 L-86 166 L-36 166 L-36 188 Z"/>',
+      B:  '<path class="arrow" d="M8 202 L-36 164 L-36 186 L-86 186 L-86 218 L-36 218 L-36 240 Z"/>',
+      WU: '<path class="arrow" d="M238 -6 L182 64 L216 64 L216 150 L260 150 L260 64 L294 64 Z"/>',
+      WD: '<path class="arrow" d="M238 160 L182 90 L216 90 L216 4 L260 4 L260 90 L294 90 Z"/>',
+      M:  '<path class="arrow" d="M100 34 L66 -10 L86 -10 L86 -56 L114 -56 L114 -10 L134 -10 Z"/>'
+    };
+    return `<svg class="fig" viewBox="-92 -62 392 360" role="img" aria-label="${esc(nameOf(id||'L'))}">
+      <path class="body" d="M100 10 C150 10 170 55 170 120 L170 205 C170 262 140 290 100 290 C60 290 30 262 30 205 L30 120 C30 55 50 10 100 10 Z"/>
+      <path class="part${on('L')}" d="M97 16 C58 18 38 55 36 118 L97 118 Z"/>
+      <path class="part${on('R')}" d="M103 16 C142 18 162 55 164 118 L103 118 Z"/>
+      <rect class="part${wheelOn}" x="88" y="38" width="24" height="52" rx="12"/>
+      <rect class="part${on('F')}" x="14" y="128" width="20" height="44" rx="7"/>
+      <rect class="part${on('B')}" x="14" y="180" width="20" height="44" rx="7"/>
+      ${arrows[id] || ''}
+    </svg>`;
+  }
+
+  function renderInputs(){
+    const tb = $('inputRows'); tb.innerHTML = '';
+    inputs.forEach((x,i)=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><input type="checkbox" ${x.on?'checked':''} aria-label="Select"></td>
+        <td>${esc(x.name)}</td>
+        <td><input type="text" value="${esc(x.finger||'')}" placeholder="e.g. ring finger"></td>
+        <td>${x.id.startsWith('K:')?'<button class="small" title="Remove">✕</button>':''}</td>`;
+      tr.querySelector('input[type=checkbox]').onchange = e=>{ x.on = e.target.checked; save(); };
+      tr.querySelector('input[type=text]').oninput = e=>{ x.finger = e.target.value; save(); };
+      const del = tr.querySelector('button');
+      if(del) del.onclick = ()=>{ inputs.splice(i,1); save(); renderInputs(); };
+      tb.appendChild(tr);
+    });
+  }
+
+  $('addKeyBtn').onclick = ()=>{
+    capturingKey = true;
+    $('addKeyHint').textContent = 'Press the keyboard key to add…';
+  };
+
+  // ---------- Input handling ----------
+  function now(){ return performance.now(); }
+  function evTime(e){
+    const t = e.timeStamp;
+    return (typeof t === 'number' && t > 0 && Math.abs(t - now()) < 1000) ? t : now();
+  }
+
+  function onInput(id, t, e){
+    if(S.phase === 'idle'){
+      $('detect').innerHTML = 'Detected: <b>' + esc(nameOf(id)) + '</b>' + (byId(id)?'':' <span class="muted">(not in the list)</span>');
+      $('detectFig').innerHTML = figSVG(id);
+      return;
+    }
+    if(S.phase === 'feedback') return;
+
+    if(S.phase === 'wait'){
+      clearTimeout(S.waitTimer);
+      results.push({target:S.target, pressed:id, type:'early', rt:null});
+      feedback('Too early!', 'This trial will be repeated', 'bad', false);
+      return;
+    }
+    if(S.phase === 'go'){
+      clearTimeout(S.goTimer);
+      const base = (S.t0paint && t >= S.t0paint) ? S.t0paint : S.t0;
+      const rt = t - base;
+      if(rt < ANTICIPATION){
+        results.push({target:S.target, pressed:id, type:'early', rt});
+        feedback('Too early!', 'Under ' + ANTICIPATION + ' ms counts as anticipation, repeating', 'bad', false);
+        return;
+      }
+      if(id === S.target){
+        results.push({target:S.target, pressed:id, type:'ok', rt});
+        feedback(Math.round(rt) + ' ms', nameOf(id), 'go', true);
+      } else {
+        results.push({target:S.target, pressed:id, type:'wrong', rt});
+        feedback('Wrong input', 'You pressed: ' + nameOf(id), 'bad', true);
+      }
+    }
+  }
+
+  // A test (either kind) is running -> swallow default browser behaviour
+  function busy(){ return S.phase !== 'idle' || A.active; }
+  function inUi(e, sel){ return e.target && e.target.closest && e.target.closest(sel); }
+
+  window.addEventListener('mousedown', e=>{
+    if(inUi(e, '#stopBtn,#arenaStop')) return;
+    if(busy()) e.preventDefault();
+    else if(inUi(e, 'button,input,label,select')) return;
+    const id = BUTTON_IDS[e.button]; if(!id) return;
+    if(A.active){ arenaInput(id, evTime(e), e.clientX, e.clientY); return; }
+    onInput(id, evTime(e), e);
+  }, true);
+
+  ['mouseup','auxclick'].forEach(t=>window.addEventListener(t, e=>{
+    if(busy() || e.button === 3 || e.button === 4) e.preventDefault();
+  }, true));
+
+  window.addEventListener('contextmenu', e=>{
+    if(busy() || !inUi(e, 'input')) e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', e=>{
+    A.mx = e.clientX; A.my = e.clientY;
+    if(A.active) arenaMove(evTime(e));
+  }, true);
+
+  window.addEventListener('wheel', e=>{
+    if(busy()) e.preventDefault();
+    if(e.deltaY === 0) return;
+    const t = evTime(e);
+    const id = e.deltaY < 0 ? 'WU' : 'WD';
+    if(A.active){
+      if(t < A.wheelIgnoreUntil) return;
+      A.wheelIgnoreUntil = t + 350;
+      arenaInput(id, t, e.clientX, e.clientY);
+      return;
+    }
+    if(t < S.wheelIgnoreUntil) return;
+    if(S.phase === 'idle' && inUi(e, 'input,select')) return;
+    if(S.phase !== 'idle') S.wheelIgnoreUntil = t + 400;
+    onInput(id, t, e);
+  }, {passive:false, capture:true});
+
+  window.addEventListener('keydown', e=>{
+    if(capturingKey){
+      e.preventDefault();
+      capturingKey = false; $('addKeyHint').textContent = '';
+      if(e.code === 'Escape') return;
+      const id = 'K:' + e.code;
+      if(!byId(id)){ inputs.push({id, name:keyName(id), finger:'', on:true}); save(); renderInputs(); }
+      return;
+    }
+    if(e.code === 'Escape' && A.active){ e.preventDefault(); finishArena(); return; }
+    if(e.code === 'Escape' && S.phase !== 'idle'){ e.preventDefault(); finish(true); return; }
+    if(e.repeat) return;
+    if(A.active){ e.preventDefault(); arenaInput('K:' + e.code, evTime(e), A.mx, A.my); return; }
+    if(S.phase === 'idle'){
+      if(inUi(e, 'input,select')) return;
+      onInput('K:' + e.code, evTime(e), e); return;
+    }
+    e.preventDefault();
+    onInput('K:' + e.code, evTime(e), e);
+  }, true);
+
+  // Prevent Back/Forward mouse buttons from leaving the page during a test
+  window.addEventListener('popstate', ()=>{ if(busy()) history.pushState(null,'',location.href); });
+
+  // ---------- Test flow ----------
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+  $('startBtn').onclick = ()=>{
+    const sel = inputs.filter(x=>x.on);
+    if(!sel.length){ alert('Select at least one input.'); return; }
+    const n = Math.max(1, Math.min(50, parseInt($('trials').value,10) || 10));
+    const q = []; sel.forEach(x=>{ for(let i=0;i<n;i++) q.push(x.id); });
+    S.queue = shuffle(q); S.idx = 0; results = [];
+    history.pushState(null,'',location.href);
+    document.body.classList.add('testing');
+    nextTrial();
+  };
+  $('stopBtn').onclick = ()=> finish(true);
+
+  function setStage(cls, main, sub, fig){
+    stage.className = cls; stageMain.textContent = main; stageSub.textContent = sub || '';
+    $('stageFig').innerHTML = figSVG(fig || '');
+    stageProg.textContent = 'Trial ' + Math.min(S.idx+1, S.queue.length) + ' / ' + S.queue.length;
+  }
+
+  function nextTrial(){
+    if(S.idx >= S.queue.length){ finish(false); return; }
+    S.target = S.queue[S.idx];
+    S.phase = 'wait';
+    const simple = $('simple').checked;
+    setStage('wait', simple ? nameOf(S.target) : 'Wait…',
+      simple ? 'Get ready… press when the screen turns green' : 'Press the input shown when the screen turns green',
+      simple ? S.target : '');
+    const d = MIN_DELAY + Math.random()*(MAX_DELAY - MIN_DELAY);
+    S.waitTimer = setTimeout(go, d);
+  }
+
+  function go(){
+    S.phase = 'go';
+    setStage('go', nameOf(S.target), 'PRESS!', S.target);
+    S.t0 = now(); S.t0paint = 0;
+    requestAnimationFrame(()=>{ S.t0paint = now(); });
+    S.goTimer = setTimeout(()=>{
+      results.push({target:S.target, pressed:null, type:'miss', rt:null});
+      feedback('Too slow', 'No response within ' + TIMEOUT/1000 + ' seconds', 'bad', true);
+    }, TIMEOUT);
+  }
+
+  function feedback(main, sub, cls, advance){
+    S.phase = 'feedback';
+    // In random mode, don't reveal the target of a trial that will be retried
+    const fig = (advance || $('simple').checked) ? S.target : '';
+    if(advance) S.idx++;
+    setStage(cls, main, sub, fig);
+    S.fbTimer = setTimeout(nextTrial, FEEDBACK_MS);
+  }
+
+  function finish(aborted){
+    clearTimeout(S.waitTimer); clearTimeout(S.goTimer); clearTimeout(S.fbTimer);
+    S.phase = 'idle';
+    document.body.classList.remove('testing');
+    renderResults();
+    if(aborted && !results.some(r=>r.type==='ok')) return;
+  }
+
+  // ---------- Results ----------
+  function median(a){ const s=[...a].sort((x,y)=>x-y), m=s.length>>1; return s.length%2 ? s[m] : (s[m-1]+s[m])/2; }
+  function mean(a){ return a.reduce((x,y)=>x+y,0)/a.length; }
+  function sd(a){ if(a.length<2) return 0; const m=mean(a); return Math.sqrt(a.reduce((s,x)=>s+(x-m)*(x-m),0)/(a.length-1)); }
+  const f = v => (v==null || isNaN(v)) ? '–' : Math.round(v);
+
+  function renderResults(){
+    if(!results.length) return;
+    const ids = [...new Set(results.map(r=>r.target))];
+    const rows = ids.map(id=>{
+      const rs = results.filter(r=>r.target===id);
+      const ok = rs.filter(r=>r.type==='ok').map(r=>r.rt);
+      return {id, ok,
+        med: ok.length?median(ok):null, avg: ok.length?mean(ok):null,
+        best: ok.length?Math.min(...ok):null, sd: ok.length?sd(ok):null,
+        wrong: rs.filter(r=>r.type==='wrong').length,
+        early: rs.filter(r=>r.type==='early').length,
+        miss: rs.filter(r=>r.type==='miss').length};
+    }).sort((a,b)=>(a.med??1e9)-(b.med??1e9));
+    const maxMed = Math.max(...rows.map(r=>r.med||0), 1);
+    const bestMed = rows.find(r=>r.med!=null)?.med;
+    const tb = $('resultRows'); tb.innerHTML = '';
+    rows.forEach(r=>{
+      const x = byId(r.id);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${esc(nameOf(r.id))}</td><td>${esc(x?x.finger||'':'')}</td>
+        <td class="num ${r.med!=null&&r.med===bestMed?'best':''}">${f(r.med)}</td>
+        <td class="num">${f(r.avg)}</td><td class="num">${f(r.best)}</td><td class="num">${r.sd==null?'–':'±'+f(r.sd)}</td>
+        <td class="num">${r.ok.length}</td><td class="num">${r.wrong}</td><td class="num">${r.early}</td><td class="num">${r.miss}</td>
+        <td class="barcell"><div class="bar" style="width:${r.med?(r.med/maxMed*100):0}%"></div></td>`;
+      tb.appendChild(tr);
+    });
+    $('resultCard').hidden = false;
+    $('csvBtn').disabled = false;
+    $('resultCard').scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  $('csvBtn').onclick = ()=>{
+    const lines = ['trial,target_input,finger,pressed_input,result,time_ms'];
+    results.forEach((r,i)=>{
+      const x = byId(r.target);
+      lines.push([i+1, nameOf(r.target), x?x.finger||'':'', r.pressed?nameOf(r.pressed):'', r.type, r.rt==null?'':r.rt.toFixed(1)]
+        .map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(','));
+    });
+    const blob = new Blob(['\ufeff'+lines.join('\n')], {type:'text/csv;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'reaction-results.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  };
+
+  // =====================================================================
+  // Test 2: move the cursor onto a target, then press the required input
+  // =====================================================================
+  const SIZES = {L:{r:42, pt:2}, M:{r:30, pt:3}, S:{r:20, pt:5}, XS:{r:13, pt:8}};
+  const HUD_H = 120, GAP_MS = 250;
+  const tEl = $('target'), bEl = $('targetBadge'), arena = $('arena');
+
+  $('startBtn2').onclick = ()=>{
+    const sel = inputs.filter(x=>x.on);
+    if(!sel.length){ alert('Select at least one input in section 1.'); return; }
+    const n = Math.max(1, Math.min(50, parseInt($('trials2').value,10) || 8));
+    const q = []; sel.forEach(x=>{ for(let i=0;i<n;i++) q.push(x.id); });
+    Object.assign(A, {queue:shuffle(q), idx:0, tgt:null, log:[], marks:[], streak:0, score:0,
+      size:$('size2').value, life:+$('life2').value, W:innerWidth, H:innerHeight, active:true});
+    history.pushState(null,'',location.href);
+    document.body.classList.add('testing','arena');
+    updateHud();
+    nextTarget(500);
+    A.raf = requestAnimationFrame(tick);
+  };
+  $('arenaStop').onclick = ()=> finishArena();
+
+  function multiplier(){ const s=A.streak; return s>=50?3 : s>=25?2.5 : s>=10?2 : s>=5?1.5 : 1; }
+
+  function updateHud(){
+    $('arenaProg').textContent = 'Target ' + Math.min(A.idx+1, A.queue.length) + ' / ' + A.queue.length;
+    $('arenaScore').textContent = 'Score: ' + Math.round(A.score) + (multiplier()>1 ? '  ×' + multiplier() : '');
+    const id = A.tgt ? A.tgt.id : '';
+    $('arenaNeedFig').innerHTML = figSVG(id);
+    $('arenaNeedName').textContent = id ? nameOf(id) : '';
+  }
+
+  function nextTarget(delay){
+    A.tgt = null;
+    tEl.style.display = 'none'; bEl.style.display = 'none';
+    updateHud();
+    clearTimeout(A.gapTimer);
+    A.gapTimer = setTimeout(spawn, delay);
+  }
+
+  function spawn(){
+    if(!A.active) return;
+    if(A.idx >= A.queue.length){ finishArena(); return; }
+    A.W = innerWidth; A.H = innerHeight;
+    const id = A.queue[A.idx], R = SIZES[A.size].r;
+    const m = R + 16, top = HUD_H + m, bottom = A.H - m, left = m, right = A.W - m - 70;
+    const minD = Math.min(280, 0.35 * Math.min(A.W, A.H - HUD_H));
+    let x, y, tries = 0;
+    do {
+      x = left + Math.random() * Math.max(1, right - left);
+      y = top + Math.random() * Math.max(1, bottom - top);
+    } while(Math.hypot(x - A.mx, y - A.my) < minD && ++tries < 50);
+
+    const t = now();
+    A.tgt = {id, x, y, R, r:R, t0:t, t0paint:0, tEnter:null, tLastEnter:null, inside:false,
+             wrong:0, miss:0, sx:A.mx, sy:A.my, path:[[A.mx, A.my]]};
+    A.lastPathT = t;
+    Object.assign(tEl.style, {display:'block', left:x+'px', top:y+'px', width:2*R+'px', height:2*R+'px',
+                              transform:'translate(-50%,-50%) scale(1)'});
+    tEl.className = '';
+    bEl.innerHTML = figSVG(id) + '<div class="bname">' + esc(nameOf(id)) + '</div>';
+    bEl.style.display = 'block';
+    // Badge to the right of the target, or to the left near the right edge
+    const bw = bEl.offsetWidth, bh = bEl.offsetHeight;
+    const bx = (x + R + 8 + bw < A.W) ? x + R + 8 : x - R - 8 - bw;
+    bEl.style.left = bx + 'px';
+    bEl.style.top = Math.max(HUD_H + 4, Math.min(A.H - bh - 4, y - bh/2)) + 'px';
+    updateHud();
+    requestAnimationFrame(()=>{ if(A.tgt) A.tgt.t0paint = now(); });
+    checkInside(t);
+  }
+
+  function checkInside(t){
+    const T = A.tgt; if(!T) return;
+    const ins = Math.hypot(A.mx - T.x, A.my - T.y) <= T.r;
+    if(ins && !T.inside){ if(T.tEnter == null) T.tEnter = t; T.tLastEnter = t; }
+    T.inside = ins;
+    tEl.classList.toggle('hover', ins);
+  }
+
+  function arenaMove(t){
+    const T = A.tgt; if(!T) return;
+    if(t - A.lastPathT > 8){ T.path.push([A.mx, A.my]); A.lastPathT = t; }
+    checkInside(t);
+  }
+
+  function tick(){
+    if(!A.active) return;
+    const T = A.tgt;
+    if(T && A.life > 0){
+      const el = now() - (T.t0paint || T.t0);
+      const k = Math.max(0, 1 - el / A.life);
+      T.r = T.R * k;
+      tEl.style.transform = 'translate(-50%,-50%) scale(' + k + ')';
+      if(el >= A.life){ endTarget('expired', now()); }
+      else checkInside(now());
+    }
+    A.raf = requestAnimationFrame(tick);
+  }
+
+  function mark(cls, x, y, text){
+    const sp = document.createElement('span');
+    sp.className = cls; sp.textContent = text;
+    sp.style.left = x + 'px'; sp.style.top = y + 'px';
+    arena.appendChild(sp);
+    setTimeout(()=>sp.remove(), 600);
+  }
+
+  function arenaInput(id, t, x, y){
+    const T = A.tgt; if(!T) return;
+    A.mx = x; A.my = y;
+    const inside = Math.hypot(x - T.x, y - T.y) <= T.r;
+    if(inside && id === T.id){ endTarget('hit', t); return; }
+    A.streak = 0; A.score -= 1;
+    if(inside){
+      T.wrong++;
+      A.marks.push({x, y, type:'wrong'});
+      mark('missmark wrong', x, y, '✕');
+      tEl.classList.add('flash'); setTimeout(()=>tEl.classList.remove('flash'), 150);
+    } else {
+      T.miss++;
+      A.marks.push({x, y, type:'miss'});
+      mark('missmark', x, y, '✕');
+    }
+    updateHud();
+  }
+
+  function endTarget(type, t){
+    const T = A.tgt; if(!T) return;
+    const base = (T.t0paint && t >= T.t0paint) ? T.t0paint : T.t0;
+    T.path.push([A.mx, A.my]);
+    const rec = {id:T.id, type, x:T.x, y:T.y, R:T.R, path:T.path, wrong:T.wrong, miss:T.miss,
+      dist: Math.hypot(T.x - T.sx, T.y - T.sy),
+      total: type === 'hit' ? t - base : null,
+      move:  T.tEnter != null ? Math.max(0, T.tEnter - base) : null,
+      press: (type === 'hit' && T.tLastEnter != null) ? Math.max(0, t - T.tLastEnter) : null};
+    A.log.push(rec);
+    if(type === 'hit'){
+      A.streak++;
+      const pts = SIZES[A.size].pt * multiplier();
+      A.score += pts;
+      mark('hitmark', T.x, T.y - T.R, '+' + (Math.round(pts*10)/10) + '  ' + Math.round(rec.total) + ' ms');
+    } else {
+      A.streak = 0;
+      mark('missmark', T.x, T.y, 'Expired');
+    }
+    A.idx++;
+    nextTarget(GAP_MS);
+  }
+
+  function finishArena(){
+    A.active = false;
+    cancelAnimationFrame(A.raf); clearTimeout(A.gapTimer);
+    A.tgt = null; tEl.style.display = 'none'; bEl.style.display = 'none';
+    arena.querySelectorAll('.missmark,.hitmark').forEach(n=>n.remove());
+    document.body.classList.remove('testing','arena');
+    renderArenaResults();
+  }
+
+  function renderArenaResults(){
+    if(!A.log.length) return;
+    const hits = A.log.filter(r=>r.type==='hit');
+    const wrong = A.log.reduce((s,r)=>s+r.wrong,0), miss = A.log.reduce((s,r)=>s+r.miss,0);
+    const expired = A.log.filter(r=>r.type==='expired').length;
+    const clicks = hits.length + wrong + miss;
+    const acc = clicks ? hits.length / clicks : 0;
+    const bonus = Math.max(0, A.score) * acc;
+    const med = a => a.length ? median(a) : null;
+    const stat = (v,l)=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`;
+    $('summary2').innerHTML =
+      stat(Math.round(A.score + bonus), 'Score (incl. accuracy bonus)') +
+      stat(Math.round(acc*100) + '%', 'Accuracy') +
+      stat(hits.length + '/' + A.log.length, 'Targets hit') +
+      stat(f(med(hits.map(r=>r.total))), 'Total (ms, median)') +
+      stat(f(med(hits.map(r=>r.move))), 'Move (ms)') +
+      stat(f(med(hits.map(r=>r.press))), 'Press (ms)');
+
+    const ids = [...new Set(A.log.map(r=>r.id))];
+    const rows = ids.map(id=>{
+      const rs = A.log.filter(r=>r.id===id), h = rs.filter(r=>r.type==='hit');
+      return {id, n:rs.length, hit:h.length,
+        total: med(h.map(r=>r.total)), move: med(h.map(r=>r.move)), press: med(h.map(r=>r.press)),
+        wrong: rs.reduce((s,r)=>s+r.wrong,0), miss: rs.reduce((s,r)=>s+r.miss,0),
+        expired: rs.filter(r=>r.type==='expired').length};
+    }).sort((a,b)=>(a.press??1e9)-(b.press??1e9));
+    const bestPress = rows.find(r=>r.press!=null)?.press;
+    const tb = $('resultRows2'); tb.innerHTML = '';
+    rows.forEach(r=>{
+      const x = byId(r.id);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${esc(nameOf(r.id))}</td><td>${esc(x?x.finger||'':'')}</td>
+        <td class="num">${r.hit}/${r.n}</td><td class="num">${f(r.total)}</td><td class="num">${f(r.move)}</td>
+        <td class="num ${r.press!=null&&r.press===bestPress?'best':''}">${f(r.press)}</td>
+        <td class="num">${r.wrong}</td><td class="num">${r.miss}</td><td class="num">${r.expired}</td>`;
+      tb.appendChild(tr);
+    });
+    $('resultCard2').hidden = false;
+    $('csvBtn2').disabled = false;
+    drawPaths();
+    $('resultCard2').scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  function drawPaths(){
+    const cv = $('pathCanvas');
+    const cw = cv.clientWidth || 800;
+    const scale = cw / A.W, ch = Math.round((A.H - HUD_H) * scale);
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = cw * dpr; cv.height = ch * dpr; cv.style.height = ch + 'px';
+    const c = cv.getContext('2d');
+    c.setTransform(dpr*scale, 0, 0, dpr*scale, 0, -HUD_H*dpr*scale);
+    const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const accent = css('--accent'), go = css('--go'), muted = css('--muted'), bad = css('--bad'), wait = css('--wait');
+    const lw = 1/scale;
+    A.log.forEach(r=>{
+      c.beginPath();
+      r.path.forEach((p,i)=> i ? c.lineTo(p[0],p[1]) : c.moveTo(p[0],p[1]));
+      c.strokeStyle = accent; c.globalAlpha = .45; c.lineWidth = 1.5*lw; c.stroke();
+      c.globalAlpha = 1;
+      c.beginPath(); c.arc(r.x, r.y, r.R, 0, Math.PI*2);
+      if(r.type === 'hit'){ c.fillStyle = go; c.globalAlpha = .55; c.fill(); c.globalAlpha = 1; }
+      else { c.strokeStyle = muted; c.lineWidth = 2*lw; c.stroke(); }
+    });
+    c.font = (16*lw) + 'px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    A.marks.forEach(m=>{ c.fillStyle = m.type === 'wrong' ? wait : bad; c.fillText('✕', m.x, m.y); });
+  }
+
+  $('csvBtn2').onclick = ()=>{
+    const lines = ['target,input,finger,result,total_ms,move_ms,press_ms,distance_px,wrong_inputs,misses'];
+    A.log.forEach((r,i)=>{
+      const x = byId(r.id);
+      const n = v => v==null ? '' : v.toFixed(1);
+      lines.push([i+1, nameOf(r.id), x?x.finger||'':'', r.type, n(r.total), n(r.move), n(r.press),
+        Math.round(r.dist), r.wrong, r.miss].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(','));
+    });
+    const blob = new Blob(['﻿'+lines.join('\n')], {type:'text/csv;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'move-press-results.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  };
+
+  renderInputs();
+  $('detectFig').innerHTML = figSVG('');
+})();
+</script>
+</body>
+</html>
