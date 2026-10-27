@@ -1,6 +1,6 @@
 {
 	"name": "lol-chat-timer",
-	"version": "26.20.1",
+	"version": "26.21.0",
 	"private": true,
 	"type": "module",
 	"scripts": {

@@ -192,7 +192,7 @@ ${source}`;
 					.map(({ spell }) => ({
 						key: spell.key,
 						title: spell.title,
-						isSummonerSpell: spell.kind === 'summoner',
+						clockTime: spell.kind !== 'basic',
 						endAt: timers[`${enemy.id}:${spell.key}`].endAt
 					}))
 			})),

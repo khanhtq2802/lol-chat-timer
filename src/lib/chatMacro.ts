@@ -25,7 +25,8 @@ const SHORT_NAMES: { [spellKey: string]: string } = {
 	SummonerBoost: 'Cleanse',
 	SummonerHaste: 'Ghost',
 	SummonerSmite: 'Smite',
-	SummonerMana: 'Clarity'
+	SummonerMana: 'Clarity',
+	R: 'R'
 };
 
 const POSITION_NAMES: { [position in Position]: string } = {
@@ -43,7 +44,8 @@ export interface MacroEnemy {
 	spells: {
 		key: string; // summoner spell id, or Q W E R
 		title: string;
-		isSummonerSpell: boolean;
+		// summoner spells and R: the game clock time it is back up, Q W E: the seconds left
+		clockTime: boolean;
 		endAt: number; // unix milliseconds
 	}[];
 }
@@ -55,8 +57,8 @@ export function formatGameTime(seconds: number) {
 }
 
 /**
- * One chat line per enemy with a running timer, "top F 05:00 | Q 4s | R 45s": the game clock time
- * the summoner spells are back up, and the seconds left for the abilities (too short for a clock
+ * One chat line per enemy with a running timer, "top F 05:00 | Q 4s | R 03:10": the game clock time
+ * the summoner spells and R are back up, and the seconds left for Q W E (too short for a clock
  * time). Uses the champion name when the lane is unknown.
  */
 export function buildChatLines(enemies: MacroEnemy[], gameTime: number, now = Date.now()) {
@@ -66,7 +68,7 @@ export function buildChatLines(enemies: MacroEnemy[], gameTime: number, now = Da
 			const name = e.position ? POSITION_NAMES[e.position] : e.champion;
 			const spells = e.spells.map((s) => {
 				const secondsLeft = Math.max(0, (s.endAt - now) / 1000);
-				return s.isSummonerSpell
+				return s.clockTime
 					? `${SHORT_NAMES[s.key] ?? s.title} ${formatGameTime(gameTime + secondsLeft)}`
 					: `${s.key} ${Math.ceil(secondsLeft)}s`;
 			});

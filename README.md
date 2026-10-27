@@ -27,9 +27,9 @@ To uninstall, untick "Start with Windows" in the tray menu, quit, and delete the
 3. When an enemy uses a spell, left click its icon on the overlay to start the timer.
 4. Next to each enemy portrait, the small icons show the boots and haste runes the app counts in (gold border: detected or guessed). Hover one for the details. They are read-only, to change them by hand turn on "Toggle Boots & Runes By Click" in the settings. "Self Test: Show My Champion" adds your own champion as one more row, to compare the timers with your real cooldowns.
 5. On a running timer: left click to remove/reset, right click to reduce 5 seconds, middle click to increase 5 seconds.
-6. Press the chat macro key (default `T`) in game to send the running timers to your team, one chat line per enemy lane, with the game clock time each summoner spell is back up and the seconds left for the abilities:
+6. Press the chat macro key (default `T`) in game to send the running timers to your team, one chat line per enemy lane, with the game clock time each summoner spell and R is back up, and the seconds left for Q, W and E:
    ```
-   top F 05:00 | R 45s
+   top F 05:00 | R 03:10
    jg Smite 02:15 | F 04:40 | Q 4s
    ```
    Lanes are `top`, `jg`, `mid`, `ad`, `sp`. They come from the game in role-based queues; otherwise the Smite user is `jg` and the others follow the scoreboard order.
