@@ -88,6 +88,7 @@ body.testing:not(.arena) #stage{display:flex}
 @keyframes pulse{from{opacity:1}to{opacity:.55}}
 .fig .cap{fill:#fff;opacity:.18;stroke:none}
 .fig .keytxt{font:700 30px system-ui,sans-serif;fill:#fff}
+.fig .plustxt{font:800 34px system-ui,sans-serif;fill:var(--muted)}
 select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}
 .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .stat{background:var(--stage);border-radius:10px;padding:8px 14px;min-width:110px}
@@ -112,6 +113,7 @@ body.arena #arena{display:block}
   border-radius:10px;padding:4px 6px}
 #targetBadge svg{height:84px;width:auto;display:block;margin:0 auto}
 #targetBadge .bname{font-weight:700;font-size:13px;text-align:center;white-space:nowrap;padding:0 4px 2px}
+#targetBadge .bname.notecue{font-size:20px;padding:4px 8px}
 .missmark{position:absolute;transform:translate(-50%,-50%);color:var(--bad);font-weight:800;font-size:20px;
   pointer-events:none;animation:fade .45s ease-out forwards}
 .missmark.wrong{color:var(--wait)}
@@ -124,7 +126,7 @@ body.arena #arena{display:block}
 <body>
 <div class="wrap">
   <h1>Mouse Button Reaction Test</h1>
-  <p class="sub">Two tests: <b>Test 1</b> measures the pure reaction time of each button and finger; <b>Test 2</b> measures moving the cursor to a target and then pressing the right button (like an aim trainer). Supports left/right click, wheel click, Back/Forward, scroll up/down, and keyboard keys (if you have remapped mouse buttons to keys in G HUB).</p>
+  <p class="sub">Two tests: <b>Test 1</b> measures the pure reaction time of each button and finger; <b>Test 2</b> measures moving the cursor to a target and then pressing the right button (like an aim trainer). Supports left/right click, wheel click, Back/Forward, scroll up/down, and keyboard keys or key combos such as Alt+J, Ctrl+J, `+J (if you have remapped mouse buttons to keys in G HUB).</p>
 
   <div class="grid">
     <div class="card">
@@ -134,9 +136,15 @@ body.arena #arena{display:block}
         <tbody id="inputRows"></tbody>
       </table>
       <div class="row">
-        <button id="addKeyBtn" class="small">+ Add keyboard key</button>
+        <button id="addKeyBtn" class="small">+ Add key / combo</button>
         <span id="addKeyHint" class="muted"></span>
       </div>
+      <p class="muted" style="margin:0">Combos: hold the first key(s) (Ctrl, Alt, Shift, ` …), then press the last key, click a mouse button or scroll (e.g. Ctrl + Left click, ` + Scroll up), then release everything. The last key pressed is the trigger; holding the others early is allowed. Some browser shortcuts (Ctrl+W/T/N) can't be blocked by a web page.</p>
+      <div class="row">
+        <input type="checkbox" id="cueNote">
+        <label for="cueNote">In tests, show the <b>note</b> instead of the input/combo</label>
+      </div>
+      <p class="muted" style="margin:0">Trains you to recall which input belongs to each note (e.g. a skill name). Inputs with an empty note still show the input. The real input is revealed after you answer.</p>
       <div class="detect"><div class="detectfig" id="detectFig"></div><div id="detect">Press any button to check that the browser detects it.</div></div>
     </div>
 
@@ -263,7 +271,7 @@ body.arena #arena{display:block}
   const BUTTON_IDS = ['L','M','R','B','F'];
   const MIN_DELAY = 1000, MAX_DELAY = 3000, TIMEOUT = 2000, ANTICIPATION = 100, FEEDBACK_MS = 700;
 
-  let inputs = load() || DEFAULT_INPUTS.map(x=>({...x}));
+  let inputs = [];
   let capturingKey = false;
   let results = [];
   const S = {phase:'idle', queue:[], idx:0, target:null, t0:0, t0paint:0,
@@ -276,17 +284,54 @@ body.arena #arena{display:block}
   const $ = id => document.getElementById(id);
   const stage = $('stage'), stageMain = $('stageMain'), stageSub = $('stageSub'), stageProg = $('stageProg');
 
+  // ---------- Keyboard keys & combos ----------
+  // Key ids: 'K:' + parts joined by '+'. Last part = trigger key, the rest are held keys
+  // (modifiers first, in canonical order). Left/right modifiers are merged.
+  const MOD = {ControlLeft:'Ctrl',ControlRight:'Ctrl',AltLeft:'Alt',AltRight:'Alt',ShiftLeft:'Shift',
+               ShiftRight:'Shift',MetaLeft:'Meta',MetaRight:'Meta',OSLeft:'Meta',OSRight:'Meta'};
+  const MOD_ORDER = ['Ctrl','Alt','Shift','Meta'];
+  const KEY_LABEL = {Backquote:'`',Minus:'-',Equal:'=',BracketLeft:'[',BracketRight:']',Backslash:'\\',
+    Semicolon:';',Quote:"'",Comma:',',Period:'.',Slash:'/',Space:'Space',Escape:'Esc',CapsLock:'Caps',
+    ArrowUp:'↑',ArrowDown:'↓',ArrowLeft:'←',ArrowRight:'→',Backspace:'Bksp',Meta:'Win/⌘',
+    IntlBackslash:'\\',NumpadAdd:'Num +',NumpadSubtract:'Num -',NumpadMultiply:'Num *',NumpadDivide:'Num /'};
+  function normCode(c){ return MOD[c] || c; }
+  function sortParts(a){
+    return [...a].sort((x,y)=>{
+      const i = MOD_ORDER.indexOf(x), j = MOD_ORDER.indexOf(y);
+      if(i >= 0 || j >= 0) return (i < 0 ? 9 : i) - (j < 0 ? 9 : j);
+      return x < y ? -1 : x > y ? 1 : 0;
+    });
+  }
+  function chordId(prior, last){ return 'K:' + [...sortParts(prior.filter(p=>p!==last)), last].join('+'); }
+  function chordParts(id){ return id.slice(2).split('+'); }
+  // Mouse inputs can be the trigger (last part) of a combo, e.g. 'K:Ctrl+L', 'K:Backquote+WU'
+  const MOUSE_PART = {L:'Left click',R:'Right click',M:'Wheel click',B:'Back',F:'Forward',WU:'Scroll up',WD:'Scroll down'};
+  function partName(p){ return MOUSE_PART[p] || KEY_LABEL[p] || p.replace(/^Key/,'').replace(/^Digit/,'').replace(/^Numpad/,'Num '); }
+
   function load(){
-    try{ const v = JSON.parse(localStorage.getItem('mrt_inputs_en')); return Array.isArray(v)&&v.length ? v : null; }
+    try{
+      const v = JSON.parse(localStorage.getItem('mrt_inputs_en'));
+      if(!Array.isArray(v) || !v.length) return null;
+      // Migrate older saves (e.g. 'K:ControlLeft' -> 'K:Ctrl')
+      v.forEach(x=>{ if(x.id && x.id.startsWith('K:')){
+        x.id = 'K:' + chordParts(x.id).map(normCode).join('+'); x.name = keyName(x.id); } });
+      return v.filter((x,i)=>v.findIndex(y=>y.id===x.id)===i);
+    }
     catch(e){ return null; }
   }
+  inputs = load() || DEFAULT_INPUTS.map(x=>({...x}));
   function save(){ try{ localStorage.setItem('mrt_inputs_en', JSON.stringify(inputs)); }catch(e){} }
   function byId(id){ return inputs.find(x=>x.id===id); }
   function nameOf(id){ const x = byId(id); return x ? x.name : keyName(id); }
+  // Optional: during tests, show the input's note instead of the input itself
+  function noteOf(id){ const x = byId(id); return x && x.finger ? x.finger.trim() : ''; }
+  function useNote(id){ return !!id && $('cueNote').checked && !!noteOf(id); }
+  function cueName(id){ return useNote(id) ? noteOf(id) : nameOf(id); }
+  function cueFig(id){ return useNote(id) ? null : id; } // null = no picture
   function keyName(id){
-    if(id.startsWith('K:')){ let c = id.slice(2);
-      c = c.replace(/^Key/,'').replace(/^Digit/,'').replace(/^Numpad/,'Num ');
-      return 'Key ' + c; }
+    if(id.startsWith('K:')){
+      const ps = chordParts(id).map(partName);
+      return ps.length > 1 ? ps.join(' + ') : 'Key ' + ps[0]; }
     const d = DEFAULT_INPUTS.find(x=>x.id===id); return d ? d.name : id;
   }
   function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -295,14 +340,27 @@ body.arena #arena{display:block}
   // id '' = plain mouse, 'K:...' = keyboard key cap.
   function figSVG(id){
     if(id && id.startsWith('K:')){
-      const label = esc(keyName(id).replace(/^Key /,''));
-      const fs = label.length > 4 ? 20 : 30;
-      return `<svg class="fig" viewBox="0 0 200 140" role="img" aria-label="Key ${label}">
-        <rect x="30" y="16" width="140" height="108" rx="18" class="part on"/>
-        <rect x="42" y="24" width="116" height="82" rx="12" class="cap"/>
-        <text x="100" y="${66 + fs/3}" text-anchor="middle" class="keytxt" style="font-size:${fs}px">${label}</text>
-      </svg>`;
+      // One key cap per part, joined by "+"
+      const raw = chordParts(id), ps = raw.map(partName), PLUS = 34;
+      let x = 30, out = '';
+      ps.forEach((lab, i)=>{
+        if(i){ out += `<text x="${x + PLUS/2}" y="82" text-anchor="middle" class="plustxt">+</text>`; x += PLUS; }
+        if(MOUSE_PART[raw[i]]){ // mouse trigger: draw a small mouse with that part highlighted
+          out += `<svg x="${x}" y="0" width="153" height="140" viewBox="-92 -62 392 360">${mouseInner(raw[i])}</svg>`;
+          x += 153; return;
+        }
+        const fs = lab.length > 4 ? 20 : lab.length > 2 ? 24 : 30;
+        const w = ps.length === 1 ? 140 : Math.max(90, Math.round(lab.length * fs * 0.62 + 40));
+        out += `<rect x="${x}" y="16" width="${w}" height="108" rx="18" class="part on"/>
+          <rect x="${x+12}" y="24" width="${w-24}" height="82" rx="12" class="cap"/>
+          <text x="${x + w/2}" y="${66 + fs/3}" text-anchor="middle" class="keytxt" style="font-size:${fs}px">${esc(lab)}</text>`;
+        x += w;
+      });
+      return `<svg class="fig" viewBox="0 0 ${x + 30} 140" role="img" aria-label="${esc(keyName(id))}">${out}</svg>`;
     }
+    return `<svg class="fig" viewBox="-92 -62 392 360" role="img" aria-label="${esc(nameOf(id||'L'))}">${mouseInner(id)}</svg>`;
+  }
+  function mouseInner(id){
     const on = p => p === id ? ' on' : '';
     const wheelOn = (id === 'M' || id === 'WU' || id === 'WD') ? ' on' : '';
     // Big arrows in the margins: left = side buttons, right = wheel scroll, top = wheel press
@@ -313,15 +371,13 @@ body.arena #arena{display:block}
       WD: '<path class="arrow" d="M238 160 L182 90 L216 90 L216 4 L260 4 L260 90 L294 90 Z"/>',
       M:  '<path class="arrow" d="M100 34 L66 -10 L86 -10 L86 -56 L114 -56 L114 -10 L134 -10 Z"/>'
     };
-    return `<svg class="fig" viewBox="-92 -62 392 360" role="img" aria-label="${esc(nameOf(id||'L'))}">
-      <path class="body" d="M100 10 C150 10 170 55 170 120 L170 205 C170 262 140 290 100 290 C60 290 30 262 30 205 L30 120 C30 55 50 10 100 10 Z"/>
+    return `<path class="body" d="M100 10 C150 10 170 55 170 120 L170 205 C170 262 140 290 100 290 C60 290 30 262 30 205 L30 120 C30 55 50 10 100 10 Z"/>
       <path class="part${on('L')}" d="M97 16 C58 18 38 55 36 118 L97 118 Z"/>
       <path class="part${on('R')}" d="M103 16 C142 18 162 55 164 118 L103 118 Z"/>
       <rect class="part${wheelOn}" x="88" y="38" width="24" height="52" rx="12"/>
       <rect class="part${on('F')}" x="14" y="128" width="20" height="44" rx="7"/>
       <rect class="part${on('B')}" x="14" y="180" width="20" height="44" rx="7"/>
-      ${arrows[id] || ''}
-    </svg>`;
+      ${arrows[id] || ''}`;
   }
 
   function renderInputs(){
@@ -340,10 +396,29 @@ body.arena #arena{display:block}
     });
   }
 
+  // Capture a key or combo: record keys in press order, finalize when all are released.
+  let cap = null;
   $('addKeyBtn').onclick = ()=>{
-    capturingKey = true;
-    $('addKeyHint').textContent = 'Press the keyboard key to add…';
+    capturingKey = true; cap = {order:[], down:new Set()};
+    $('addKeyHint').textContent = 'Press a key or combo (e.g. Alt+J, `+J), or hold key(s) and click/scroll (e.g. Ctrl+Left click)… (Esc = cancel)';
   };
+  function stopCapture(msg){ capturingKey = false; cap = null; $('addKeyHint').textContent = msg || ''; }
+  function capDown(e, part){
+    if(e.repeat) return;
+    if(e.code === 'Escape' && !cap.order.length){ stopCapture(); return; }
+    cap.down.add(part);
+    cap.order = cap.order.filter(p=>p!==part); cap.order.push(part);
+    $('addKeyHint').textContent = 'Recording: ' + keyName(chordId(cap.order.slice(0,-1), part)) + ' — release to add';
+  }
+  function capUp(part){
+    cap.down.delete(part);
+    if(part === 'Meta') cap.down.clear(); // macOS doesn't send keyup for keys released while ⌘ is down
+    if(cap.down.size || !cap.order.length) return;
+    const o = cap.order, id = chordId(o.slice(0,-1), o[o.length-1]);
+    if(byId(id)){ stopCapture(keyName(id) + ' is already in the list'); return; }
+    inputs.push({id, name:keyName(id), finger:'', on:true}); save(); renderInputs();
+    stopCapture('Added ' + keyName(id));
+  }
 
   // ---------- Input handling ----------
   function now(){ return performance.now(); }
@@ -377,10 +452,10 @@ body.arena #arena{display:block}
       }
       if(id === S.target){
         results.push({target:S.target, pressed:id, type:'ok', rt});
-        feedback(Math.round(rt) + ' ms', nameOf(id), 'go', true);
+        feedback(Math.round(rt) + ' ms', useNote(id) ? noteOf(id) + ' = ' + nameOf(id) : nameOf(id), 'go', true);
       } else {
         results.push({target:S.target, pressed:id, type:'wrong', rt});
-        feedback('Wrong input', 'You pressed: ' + nameOf(id), 'bad', true);
+        feedback('Wrong input', 'You pressed: ' + nameOf(id) + (useNote(S.target) ? ' — needed: ' + nameOf(S.target) : ''), 'bad', true);
       }
     }
   }
@@ -389,11 +464,37 @@ body.arena #arena{display:block}
   function busy(){ return S.phase !== 'idle' || A.active; }
   function inUi(e, sel){ return e.target && e.target.closest && e.target.closest(sel); }
 
+  // Keep Ctrl/Alt/Shift/Meta in sync with what the mouse event reports (in case a keyup was missed)
+  function syncMods(e){
+    [['Ctrl','ctrlKey'],['Alt','altKey'],['Shift','shiftKey'],['Meta','metaKey']]
+      .forEach(([p,k])=>{ if(e[k]) held.add(p); else held.delete(p); });
+  }
+  // Mouse input + any held keys -> 'L' alone, or a combo id like 'K:Ctrl+L'
+  function mouseChord(mid){ return held.size ? chordId([...held], mid) : mid; }
+  let suppressClickUntil = 0;
+  // Capture mode: a mouse press/scroll while holding key(s) adds a key+mouse combo
+  function capMouse(mid){
+    const keys = cap.order.filter(p=>cap.down.has(p));
+    if(!keys.length){ stopCapture('Hold a key (Ctrl, Alt, ` …) while clicking/scrolling to add a mouse combo'); return; }
+    const id = chordId(keys, mid);
+    keys.forEach(k=>held.add(k)); // keys are still down after capture ends
+    if(byId(id)) stopCapture(keyName(id) + ' is already in the list');
+    else { inputs.push({id, name:keyName(id), finger:'', on:true}); save(); renderInputs(); stopCapture('Added ' + keyName(id)); }
+  }
+  window.addEventListener('click', e=>{
+    if(now() < suppressClickUntil){ suppressClickUntil = 0; e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
   window.addEventListener('mousedown', e=>{
+    const mid = BUTTON_IDS[e.button];
+    if(capturingKey){ e.preventDefault(); if(e.button === 0) suppressClickUntil = now() + 1000; if(mid) capMouse(mid); return; }
     if(inUi(e, '#stopBtn,#arenaStop')) return;
     if(busy()) e.preventDefault();
     else if(inUi(e, 'button,input,label,select')) return;
-    const id = BUTTON_IDS[e.button]; if(!id) return;
+    if(!mid) return;
+    syncMods(e); pending = null;
+    const id = mouseChord(mid);
+    if(!busy() && id !== mid && byId(id)) e.preventDefault();
     if(A.active){ arenaInput(id, evTime(e), e.clientX, e.clientY); return; }
     onInput(id, evTime(e), e);
   }, true);
@@ -412,10 +513,16 @@ body.arena #arena{display:block}
   }, true);
 
   window.addEventListener('wheel', e=>{
-    if(busy()) e.preventDefault();
-    if(e.deltaY === 0) return;
+    if(busy() || capturingKey) e.preventDefault();
+    // Shift+wheel is turned into horizontal scrolling by some browsers
+    const dy = e.deltaY || (e.shiftKey ? e.deltaX : 0);
+    if(dy === 0) return;
     const t = evTime(e);
-    const id = e.deltaY < 0 ? 'WU' : 'WD';
+    const mid = dy < 0 ? 'WU' : 'WD';
+    if(capturingKey){ capMouse(mid); return; }
+    syncMods(e); pending = null;
+    const id = mouseChord(mid);
+    if(!busy() && id !== mid && byId(id)) e.preventDefault(); // e.g. stop Ctrl+wheel zooming
     if(A.active){
       if(t < A.wheelIgnoreUntil) return;
       A.wheelIgnoreUntil = t + 350;
@@ -428,26 +535,55 @@ body.arena #arena{display:block}
     onInput(id, t, e);
   }, {passive:false, capture:true});
 
+  // Keys currently held (normalized parts). A key press forms a chord with the held keys.
+  // If that chord is the start of a listed combo (e.g. Alt for Alt+J), it is deferred:
+  // it only counts as its own input if released without completing the combo.
+  const held = new Set();
+  let pending = null;
+  function keyTargets(){
+    return (busy() ? inputs.filter(x=>x.on) : inputs).map(x=>x.id).filter(id=>id.startsWith('K:'));
+  }
+  function isComboStart(id){
+    const P = chordParts(id);
+    return keyTargets().some(c=>{
+      const C = chordParts(c); if(C.length <= P.length) return false;
+      const pre = C.slice(0, -1); return P.every(p=>pre.includes(p));
+    });
+  }
+  function dispatchKey(id, t){
+    if(A.active){ arenaInput(id, t, A.mx, A.my); return; }
+    onInput(id, t);
+  }
+
   window.addEventListener('keydown', e=>{
-    if(capturingKey){
-      e.preventDefault();
-      capturingKey = false; $('addKeyHint').textContent = '';
-      if(e.code === 'Escape') return;
-      const id = 'K:' + e.code;
-      if(!byId(id)){ inputs.push({id, name:keyName(id), finger:'', on:true}); save(); renderInputs(); }
-      return;
-    }
+    const part = normCode(e.code);
+    if(capturingKey){ e.preventDefault(); capDown(e, part); return; }
     if(e.code === 'Escape' && A.active){ e.preventDefault(); finishArena(); return; }
     if(e.code === 'Escape' && S.phase !== 'idle'){ e.preventDefault(); finish(true); return; }
-    if(e.repeat) return;
-    if(A.active){ e.preventDefault(); arenaInput('K:' + e.code, evTime(e), A.mx, A.my); return; }
-    if(S.phase === 'idle'){
-      if(inUi(e, 'input,select')) return;
-      onInput('K:' + e.code, evTime(e), e); return;
-    }
-    e.preventDefault();
-    onInput('K:' + e.code, evTime(e), e);
+    const typing = !busy() && inUi(e, 'input,select');
+    if(busy()) e.preventDefault();
+    if(e.repeat){ return; }
+    const prior = [...held];
+    held.add(part);
+    if(typing) return;
+    pending = null;
+    const id = chordId(prior, part), t = evTime(e);
+    const start = isComboStart(id);
+    if(!busy() && (start || byId(id))) e.preventDefault(); // e.g. stop Ctrl+J opening Downloads
+    if(start){ pending = {part, id, t}; return; }
+    dispatchKey(id, t);
   }, true);
+
+  window.addEventListener('keyup', e=>{
+    const part = normCode(e.code);
+    if(capturingKey){ e.preventDefault(); capUp(part); return; }
+    if(busy()) e.preventDefault(); // e.g. stop a lone Alt from opening the window menu
+    held.delete(part);
+    if(part === 'Meta') held.clear();
+    if(pending && pending.part === part){ const p = pending; pending = null; dispatchKey(p.id, p.t); }
+  }, true);
+
+  window.addEventListener('blur', ()=>{ held.clear(); pending = null; });
 
   // Prevent Back/Forward mouse buttons from leaving the page during a test
   window.addEventListener('popstate', ()=>{ if(busy()) history.pushState(null,'',location.href); });
@@ -469,7 +605,7 @@ body.arena #arena{display:block}
 
   function setStage(cls, main, sub, fig){
     stage.className = cls; stageMain.textContent = main; stageSub.textContent = sub || '';
-    $('stageFig').innerHTML = figSVG(fig || '');
+    $('stageFig').innerHTML = fig === null ? '' : figSVG(fig || '');
     stageProg.textContent = 'Trial ' + Math.min(S.idx+1, S.queue.length) + ' / ' + S.queue.length;
   }
 
@@ -478,16 +614,16 @@ body.arena #arena{display:block}
     S.target = S.queue[S.idx];
     S.phase = 'wait';
     const simple = $('simple').checked;
-    setStage('wait', simple ? nameOf(S.target) : 'Wait…',
+    setStage('wait', simple ? cueName(S.target) : 'Wait…',
       simple ? 'Get ready… press when the screen turns green' : 'Press the input shown when the screen turns green',
-      simple ? S.target : '');
+      simple ? cueFig(S.target) : '');
     const d = MIN_DELAY + Math.random()*(MAX_DELAY - MIN_DELAY);
     S.waitTimer = setTimeout(go, d);
   }
 
   function go(){
     S.phase = 'go';
-    setStage('go', nameOf(S.target), 'PRESS!', S.target);
+    setStage('go', cueName(S.target), 'PRESS!', cueFig(S.target));
     S.t0 = now(); S.t0paint = 0;
     requestAnimationFrame(()=>{ S.t0paint = now(); });
     S.goTimer = setTimeout(()=>{
@@ -499,7 +635,7 @@ body.arena #arena{display:block}
   function feedback(main, sub, cls, advance){
     S.phase = 'feedback';
     // In random mode, don't reveal the target of a trial that will be retried
-    const fig = (advance || $('simple').checked) ? S.target : '';
+    const fig = advance ? S.target : $('simple').checked ? cueFig(S.target) : '';
     if(advance) S.idx++;
     setStage(cls, main, sub, fig);
     S.fbTimer = setTimeout(nextTrial, FEEDBACK_MS);
@@ -592,8 +728,8 @@ body.arena #arena{display:block}
     $('arenaProg').textContent = 'Target ' + Math.min(A.idx+1, A.queue.length) + ' / ' + A.queue.length;
     $('arenaScore').textContent = 'Score: ' + Math.round(A.score) + (multiplier()>1 ? '  ×' + multiplier() : '');
     const id = A.tgt ? A.tgt.id : '';
-    $('arenaNeedFig').innerHTML = figSVG(id);
-    $('arenaNeedName').textContent = id ? nameOf(id) : '';
+    $('arenaNeedFig').innerHTML = useNote(id) ? '' : figSVG(id);
+    $('arenaNeedName').textContent = id ? cueName(id) : '';
   }
 
   function nextTarget(delay){
@@ -624,7 +760,8 @@ body.arena #arena{display:block}
     Object.assign(tEl.style, {display:'block', left:x+'px', top:y+'px', width:2*R+'px', height:2*R+'px',
                               transform:'translate(-50%,-50%) scale(1)'});
     tEl.className = '';
-    bEl.innerHTML = figSVG(id) + '<div class="bname">' + esc(nameOf(id)) + '</div>';
+    bEl.innerHTML = useNote(id) ? '<div class="bname notecue">' + esc(noteOf(id)) + '</div>'
+                                : figSVG(id) + '<div class="bname">' + esc(nameOf(id)) + '</div>';
     bEl.style.display = 'block';
     // Badge to the right of the target, or to the left near the right edge
     const bw = bEl.offsetWidth, bh = bEl.offsetHeight;
@@ -807,6 +944,8 @@ body.arena #arena{display:block}
     setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
   };
 
+  try{ $('cueNote').checked = localStorage.getItem('mrt_cue_note') === '1'; }catch(e){}
+  $('cueNote').onchange = e=>{ try{ localStorage.setItem('mrt_cue_note', e.target.checked ? '1' : '0'); }catch(_){} };
   renderInputs();
   $('detectFig').innerHTML = figSVG('');
 })();
